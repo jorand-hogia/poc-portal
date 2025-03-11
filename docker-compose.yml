@@ -1,0 +1,28 @@
+version: '3'
+
+services:
+  portal:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./config.json:/app/config.json
+    networks:
+      - app-network
+    environment:
+      - FLASK_ENV=production
+    restart: unless-stopped
+
+  external-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.external
+    ports:
+      - "5001:5001"
+    networks:
+      - app-network
+    restart: unless-stopped
+
+networks:
+  app-network:
+    driver: bridge 

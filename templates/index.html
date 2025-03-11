@@ -3,35 +3,140 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hello World</title>
+    <title>Portal Dashboard</title>
     <style>
         body {
             font-family: 'Arial', sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
             margin: 0;
+            padding: 0;
             background: linear-gradient(135deg, #6e8efb, #a777e3);
+            min-height: 100vh;
         }
         .container {
-            text-align: center;
+            max-width: 1200px;
+            margin: 0 auto;
             padding: 2rem;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            background: white;
+            padding: 1rem 2rem;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .header h1 {
+            color: #333;
+            margin: 0;
+        }
+        .header nav a {
+            text-decoration: none;
+            color: #6e8efb;
+            margin-left: 1rem;
+            font-weight: bold;
+        }
+        .header nav a:hover {
+            text-decoration: underline;
+        }
+        .service-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .card h2 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #f0f0f0;
+            padding-bottom: 0.5rem;
+        }
+        .card .status {
+            display: inline-block;
+            padding: 0.3rem 0.6rem;
+            border-radius: 50px;
+            font-size: 0.8rem;
+            margin-bottom: 1rem;
+        }
+        .status.connected {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .card .url {
+            color: #6c757d;
+            margin-bottom: 1rem;
+            word-break: break-all;
+        }
+        .card .data {
+            background-color: #f8f9fa;
+            padding: 1rem;
+            border-radius: 5px;
+            max-height: 200px;
+            overflow: auto;
+            font-family: monospace;
+        }
+        .welcome-card {
+            background: white;
+            border-radius: 10px;
+            padding: 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .welcome-card h2 {
+            color: #333;
+        }
+        .welcome-card p {
+            color: #666;
+        }
+        .clock-container {
+            text-align: right;
+            margin-bottom: 1rem;
+        }
+        #clock {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+            font-size: 1rem;
+            color: #333;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
             background: white;
             border-radius: 10px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
-        h1 {
+        .empty-state h2 {
             color: #333;
-            margin-bottom: 1rem;
         }
-        p {
+        .empty-state p {
             color: #666;
+            margin-bottom: 1.5rem;
         }
-        #clock {
-            font-size: 1.5rem;
-            color: #333;
-            margin-top: 1rem;
+        .button {
+            display: inline-block;
+            background-color: #6e8efb;
+            color: white;
+            text-decoration: none;
+            padding: 0.7rem 1.5rem;
+            border-radius: 5px;
+            font-weight: bold;
+            transition: background-color 0.3s;
+        }
+        .button:hover {
+            background-color: #5a7dfa;
         }
     </style>
     <script>
@@ -43,17 +148,53 @@
             const hours = String(cetTime.getHours()).padStart(2, '0');
             const minutes = String(cetTime.getMinutes()).padStart(2, '0');
             const seconds = String(cetTime.getSeconds()).padStart(2, '0');
-            document.getElementById('clock').textContent = `${hours}:${minutes}:${seconds}`;
+            document.getElementById('clock').textContent = `${hours}:${minutes}:${seconds} CET`;
         }
-        setInterval(updateClock, 1000);
-        window.onload = updateClock;
+        
+        window.onload = function() {
+            updateClock();
+            setInterval(updateClock, 1000);
+        };
     </script>
 </head>
 <body>
     <div class="container">
-        <h1>Hello, World! 👋</h1>
-        <p>Welcome to your first Flask web page.</p>
-        <div id="clock"></div>
+        <div class="clock-container">
+            <div id="clock"></div>
+        </div>
+        
+        <div class="header">
+            <h1>Portal Dashboard</h1>
+            <nav>
+                <a href="/">Home</a>
+                <a href="/settings">Settings</a>
+            </nav>
+        </div>
+        
+        {% if services %}
+            <div class="service-cards">
+                {% for service in services %}
+                    <div class="card">
+                        <h2>{{ service.name }}</h2>
+                        <div class="status {% if service.status == 'Connected' %}connected{% else %}error{% endif %}">
+                            {{ service.status }}
+                        </div>
+                        <div class="url">{{ service.url }}</div>
+                        {% if service.data %}
+                            <div class="data">
+                                <pre>{{ service.data }}</pre>
+                            </div>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty-state">
+                <h2>Welcome to Your Portal Dashboard!</h2>
+                <p>You haven't added any external services yet. Go to Settings to configure your first service.</p>
+                <a href="/settings" class="button">Go to Settings</a>
+            </div>
+        {% endif %}
     </div>
 </body>
 </html> 

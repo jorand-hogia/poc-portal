@@ -1,0 +1,14 @@
+Use Python 3.9+ with Flask for the web app.
+Prioritize clean, modular code with error handling.
+Follow Docker best practices for containerization.
+Implement proper error handling at the beginning of functions.
+Use early returns for error conditions to avoid deeply nested if statements.
+Use guard clauses to handle preconditions and invalid states early.
+Implement proper error logging and user-friendly error messages.
+Sanitize user inputs in forms to prevent injection attacks.
+Use environment variables for sensitive data.
+Create modular code with separate functions for config loading/saving.
+Follow RESTful API design principles for endpoints.
+Ensure responsive design for the web interface.
+Implement proper validation for user inputs.
+Document code with docstrings and comments. 
