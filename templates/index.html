@@ -170,6 +170,13 @@
             overflow: auto;
             height: calc(100% - 100px);
             min-height: 50px;
+            position: relative;
+        }
+        .card .data-html iframe {
+            border: none;
+            width: 100%;
+            height: 100%;
+            display: block;
         }
         .welcome-card {
             background: white;
@@ -247,180 +254,320 @@
             document.getElementById('clock').textContent = `${hours}:${minutes}:${seconds} CET`;
         }
         
-        // Function to initialize card resizing
-        function initCardResizing() {
-            const cards = document.querySelectorAll('.card');
+        // Card class to encapsulate card functionality
+        class ServiceCard {
+            constructor(cardElement) {
+                this.cardElement = cardElement;
+                this.serviceId = cardElement.getAttribute('data-service-id');
+                this.serviceName = cardElement.querySelector('h2').textContent.trim();
+                
+                this.init();
+            }
             
-            // Apply saved sizes from localStorage
-            cards.forEach((card, index) => {
-                const serviceId = card.getAttribute('data-service-id');
-                const savedWidth = localStorage.getItem(`card_width_${serviceId}`);
-                const savedHeight = localStorage.getItem(`card_height_${serviceId}`);
+            init() {
+                // Apply saved dimensions
+                this.applySavedDimensions();
                 
-                // Apply saved dimensions if they exist
-                if (savedWidth) card.style.width = savedWidth;
-                if (savedHeight) card.style.height = savedHeight;
+                // Add UI controls
+                this.addControls();
                 
+                // Setup resize functionality
+                this.setupResizing();
+            }
+            
+            applySavedDimensions() {
+                const savedWidth = localStorage.getItem(`card_width_${this.serviceId}`);
+                const savedHeight = localStorage.getItem(`card_height_${this.serviceId}`);
+                
+                if (savedWidth) this.cardElement.style.width = savedWidth;
+                if (savedHeight) this.cardElement.style.height = savedHeight;
+            }
+            
+            addControls() {
                 // Add resize handle
-                const resizeHandle = document.createElement('div');
-                resizeHandle.className = 'resize-handle';
-                card.appendChild(resizeHandle);
+                this.resizeHandle = document.createElement('div');
+                this.resizeHandle.className = 'resize-handle';
+                this.cardElement.appendChild(this.resizeHandle);
                 
-                // Add reset button
+                // Add control buttons
                 const controlsDiv = document.createElement('div');
                 controlsDiv.className = 'card-controls';
                 
-                const resetButton = document.createElement('button');
-                resetButton.className = 'size-reset';
-                resetButton.innerHTML = '⟲';
-                resetButton.title = 'Reset size';
-                controlsDiv.appendChild(resetButton);
+                // Reset size button
+                this.resetButton = document.createElement('button');
+                this.resetButton.className = 'size-reset';
+                this.resetButton.innerHTML = '⟲';
+                this.resetButton.title = 'Reset size';
+                controlsDiv.appendChild(this.resetButton);
                 
-                // Add refresh button
-                const refreshButton = document.createElement('button');
-                refreshButton.className = 'refresh-card';
-                refreshButton.innerHTML = '↻';
-                refreshButton.title = 'Refresh data';
-                controlsDiv.appendChild(refreshButton);
+                // Refresh button
+                this.refreshButton = document.createElement('button');
+                this.refreshButton.className = 'refresh-card';
+                this.refreshButton.innerHTML = '↻';
+                this.refreshButton.title = 'Refresh data';
+                controlsDiv.appendChild(this.refreshButton);
                 
-                card.appendChild(controlsDiv);
+                this.cardElement.appendChild(controlsDiv);
                 
-                // Reset button event
-                resetButton.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    card.style.width = '';
-                    card.style.height = '';
-                    // Clear saved dimensions
-                    localStorage.removeItem(`card_width_${serviceId}`);
-                    localStorage.removeItem(`card_height_${serviceId}`);
-                });
+                // Add event listeners
+                this.resetButton.addEventListener('click', this.resetSize.bind(this));
+                this.refreshButton.addEventListener('click', this.refreshData.bind(this));
+            }
+            
+            resetSize(e) {
+                e.stopPropagation();
+                this.cardElement.style.width = '';
+                this.cardElement.style.height = '';
                 
-                // Refresh button event
-                refreshButton.addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    refreshButton.classList.add('loading');
-                    refreshButton.innerHTML = '';
+                // Clear saved dimensions
+                localStorage.removeItem(`card_width_${this.serviceId}`);
+                localStorage.removeItem(`card_height_${this.serviceId}`);
+            }
+            
+            async refreshData(e) {
+                e.stopPropagation();
+                this.refreshButton.classList.add('loading');
+                this.refreshButton.innerHTML = '';
+                
+                try {
+                    // Fetch updated service data
+                    const response = await fetch(`/refresh-service-data?name=${encodeURIComponent(this.serviceName)}`);
+                    if (!response.ok) throw new Error('Failed to refresh data');
                     
-                    try {
-                        // Get service name from the card title
-                        const serviceName = card.querySelector('h2').textContent.trim();
-                        
-                        // Fetch updated service data
-                        const response = await fetch(`/refresh-service-data?name=${encodeURIComponent(serviceName)}`);
-                        if (!response.ok) throw new Error('Failed to refresh data');
-                        
-                        const serviceData = await response.json();
-                        
-                        // Update card status
-                        const statusElement = card.querySelector('.status');
-                        statusElement.textContent = serviceData.status;
-                        statusElement.className = 'status';
-                        statusElement.classList.add(serviceData.status === 'Connected' ? 'connected' : 'error');
-                        
-                        // Update data section
-                        const existingDataSection = card.querySelector('.data, .data-html');
-                        if (existingDataSection) existingDataSection.remove();
-                        
-                        if (serviceData.data) {
-                            const isHtml = typeof serviceData.data === 'string' && 
-                                          (serviceData.data.startsWith('<!DOCTYPE html>') || 
-                                           serviceData.data.startsWith('<html>') || 
-                                           (serviceData.data.includes('<') && serviceData.data.includes('>')));
-                            
-                            const dataContainer = document.createElement('div');
-                            dataContainer.className = isHtml ? 'data-html' : 'data';
-                            
-                            if (isHtml) {
-                                dataContainer.innerHTML = serviceData.data;
-                            } else {
-                                const pre = document.createElement('pre');
-                                pre.textContent = typeof serviceData.data === 'object' ? 
-                                    JSON.stringify(serviceData.data, null, 2) : 
-                                    serviceData.data;
-                                dataContainer.appendChild(pre);
-                            }
-                            
-                            // Insert before resize handle
-                            card.insertBefore(dataContainer, card.querySelector('.resize-handle'));
-                        }
-                    } catch (error) {
-                        console.error('Error refreshing card data:', error);
-                        alert('Failed to refresh data: ' + error.message);
-                    } finally {
-                        refreshButton.classList.remove('loading');
-                        refreshButton.innerHTML = '↻';
-                    }
-                });
+                    const serviceData = await response.json();
+                    
+                    // Update card within its own container
+                    this.updateCardContent(serviceData);
+                } catch (error) {
+                    console.error('Error refreshing card data:', error);
+                    alert('Failed to refresh data: ' + error.message);
+                } finally {
+                    this.refreshButton.classList.remove('loading');
+                    this.refreshButton.innerHTML = '↻';
+                }
+            }
+            
+            updateCardContent(serviceData) {
+                // Update status
+                const statusElement = this.cardElement.querySelector('.status');
+                statusElement.textContent = serviceData.status;
+                statusElement.className = 'status';
+                statusElement.classList.add(serviceData.status === 'Connected' ? 'connected' : 'error');
                 
+                // Update data section
+                const existingDataSection = this.cardElement.querySelector('.data, .data-html');
+                if (existingDataSection) existingDataSection.remove();
+                
+                if (serviceData.data) {
+                    const isHtml = typeof serviceData.data === 'string' && 
+                                  (serviceData.data.startsWith('<!DOCTYPE html>') || 
+                                   serviceData.data.startsWith('<html>') || 
+                                   (serviceData.data.includes('<') && serviceData.data.includes('>')));
+                    
+                    const dataContainer = document.createElement('div');
+                    dataContainer.className = isHtml ? 'data-html' : 'data';
+                    
+                    if (isHtml) {
+                        // Create iframe for isolation
+                        const iframe = document.createElement('iframe');
+                        iframe.sandbox = 'allow-scripts allow-same-origin allow-forms';
+                        iframe.title = `${this.serviceName} content`;
+                        
+                        // Add reference to parent card
+                        iframe.dataset.cardId = this.serviceId;
+                        
+                        dataContainer.appendChild(iframe);
+                        
+                        // Wait for iframe to load, then write content
+                        iframe.onload = () => {
+                            const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                            iframeDoc.open();
+                            iframeDoc.write(serviceData.data);
+                            iframeDoc.close();
+                            
+                            // Adjust iframe height based on content
+                            this.adjustIframeHeight(iframe);
+                        };
+                        
+                        // Set a blank initial src to trigger load event
+                        iframe.src = 'about:blank';
+                    } else {
+                        const pre = document.createElement('pre');
+                        pre.textContent = typeof serviceData.data === 'object' ? 
+                            JSON.stringify(serviceData.data, null, 2) : 
+                            serviceData.data;
+                        dataContainer.appendChild(pre);
+                    }
+                    
+                    // Insert before resize handle
+                    this.cardElement.insertBefore(dataContainer, this.resizeHandle);
+                }
+            }
+            
+            adjustIframeHeight(iframe) {
+                try {
+                    // Try to get the content height
+                    const bodyHeight = iframe.contentWindow.document.body.scrollHeight;
+                    const htmlHeight = iframe.contentWindow.document.documentElement.scrollHeight;
+                    const height = Math.max(bodyHeight, htmlHeight);
+                    
+                    // Set a reasonable max height to prevent excessive expansion
+                    const maxHeight = 500;
+                    iframe.style.height = Math.min(height, maxHeight) + 'px';
+                } catch (e) {
+                    console.error('Error adjusting iframe height:', e);
+                }
+            }
+            
+            setupResizing() {
                 // Variables for resize logic
                 let isResizing = false;
                 let startX, startY, startWidth, startHeight;
                 
                 // Debounced save function
-                const saveCardSize = debounce((id, width, height) => {
-                    localStorage.setItem(`card_width_${id}`, width);
-                    localStorage.setItem(`card_height_${id}`, height);
+                const saveCardSize = debounce((width, height) => {
+                    localStorage.setItem(`card_width_${this.serviceId}`, width);
+                    localStorage.setItem(`card_height_${this.serviceId}`, height);
                 }, 300); // 300ms delay
                 
                 // Mouse down event on resize handle
-                resizeHandle.addEventListener('mousedown', (e) => {
+                this.resizeHandle.addEventListener('mousedown', (e) => {
                     e.preventDefault();
                     isResizing = true;
                     startX = e.clientX;
                     startY = e.clientY;
-                    startWidth = card.offsetWidth;
-                    startHeight = card.offsetHeight;
+                    startWidth = this.cardElement.offsetWidth;
+                    startHeight = this.cardElement.offsetHeight;
                     
                     // Add resizing class for visual feedback
-                    card.classList.add('resizing');
+                    this.cardElement.classList.add('resizing');
+                    
+                    // Using arrow functions to maintain 'this' context
+                    const onMouseMove = (e) => {
+                        if (!isResizing) return;
+                        
+                        // Calculate new width and height
+                        const newWidth = startWidth + (e.clientX - startX);
+                        const newHeight = startHeight + (e.clientY - startY);
+                        
+                        // Apply minimum dimensions
+                        const minWidth = 250;
+                        const minHeight = 200;
+                        
+                        if (newWidth > minWidth) {
+                            this.cardElement.style.width = newWidth + 'px';
+                        }
+                        
+                        if (newHeight > minHeight) {
+                            this.cardElement.style.height = newHeight + 'px';
+                        }
+                    };
+                    
+                    const onMouseUp = () => {
+                        isResizing = false;
+                        
+                        // Remove resizing class
+                        this.cardElement.classList.remove('resizing');
+                        
+                        // Save dimensions to localStorage with debounce
+                        saveCardSize(this.cardElement.style.width, this.cardElement.style.height);
+                        
+                        // Remove event listeners
+                        document.removeEventListener('mousemove', onMouseMove);
+                        document.removeEventListener('mouseup', onMouseUp);
+                    };
                     
                     // Add mouse move and mouse up event listeners
                     document.addEventListener('mousemove', onMouseMove);
                     document.addEventListener('mouseup', onMouseUp);
                 });
+            }
+        }
+        
+        // Function to handle messages from card iframes
+        function handleCardMessage(event) {
+            // Verify message structure
+            if (!event.data || typeof event.data !== 'object') return;
+            
+            const { serviceId, action, data } = event.data;
+            if (!serviceId || !action) return;
+            
+            console.log(`Card message received: ${serviceId} - ${action}`, data);
+            
+            // Find the card element
+            const cardElement = document.querySelector(`.card[data-service-id="${serviceId}"]`);
+            if (!cardElement) return;
+            
+            // Process the action
+            processCardAction(serviceId, action, data, cardElement);
+        }
+        
+        // Function to process card actions
+        async function processCardAction(serviceId, action, data, cardElement) {
+            try {
+                // Send the action to the server
+                const response = await fetch('/card-action', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ serviceId, action, data })
+                });
                 
-                // Mouse move handler
-                function onMouseMove(e) {
-                    if (!isResizing) return;
-                    
-                    // Calculate new width and height
-                    const newWidth = startWidth + (e.clientX - startX);
-                    const newHeight = startHeight + (e.clientY - startY);
-                    
-                    // Apply minimum dimensions
-                    const minWidth = 250;
-                    const minHeight = 200;
-                    
-                    if (newWidth > minWidth) {
-                        card.style.width = newWidth + 'px';
+                if (!response.ok) throw new Error('Failed to process card action');
+                
+                const result = await response.json();
+                
+                // Handle the result based on the action type
+                if (action === 'refresh') {
+                    // Trigger card refresh
+                    const cardInstance = cardElement._cardInstance;
+                    if (cardInstance && typeof cardInstance.refreshData === 'function') {
+                        cardInstance.refreshData(new Event('custom'));
                     }
-                    
-                    if (newHeight > minHeight) {
-                        card.style.height = newHeight + 'px';
+                } else if (action === 'resize') {
+                    // Handle resize request from card content
+                    if (data && data.height) {
+                        const iframe = cardElement.querySelector('iframe');
+                        if (iframe) iframe.style.height = `${data.height}px`;
                     }
                 }
                 
-                // Mouse up handler
-                function onMouseUp() {
-                    isResizing = false;
-                    
-                    // Remove resizing class
-                    card.classList.remove('resizing');
-                    
-                    // Save dimensions to localStorage with debounce
-                    saveCardSize(serviceId, card.style.width, card.style.height);
-                    
-                    // Remove event listeners
-                    document.removeEventListener('mousemove', onMouseMove);
-                    document.removeEventListener('mouseup', onMouseUp);
+                // If the action response includes a callback, execute it in the iframe
+                if (result.callback) {
+                    const iframe = cardElement.querySelector('iframe');
+                    if (iframe && iframe.contentWindow) {
+                        iframe.contentWindow.postMessage({
+                            type: 'callback',
+                            action: action,
+                            result: result
+                        }, '*');
+                    }
                 }
+            } catch (error) {
+                console.error('Error processing card action:', error);
+            }
+        }
+        
+        // Function to initialize card instances
+        function initCards() {
+            const cardElements = document.querySelectorAll('.card');
+            
+            // Create a ServiceCard instance for each card element
+            cardElements.forEach(cardElement => {
+                const cardInstance = new ServiceCard(cardElement);
+                // Store the instance reference on the element for easy access
+                cardElement._cardInstance = cardInstance;
             });
+            
+            // Listen for messages from iframes
+            window.addEventListener('message', handleCardMessage);
         }
         
         window.onload = function() {
             updateClock();
             setInterval(updateClock, 1000);
-            initCardResizing();
+            initCards();
         };
     </script>
 </head>
@@ -450,7 +597,10 @@
                         {% if service.data %}
                             {% if service.data is string and (service.data.startswith('<!DOCTYPE html>') or service.data.startswith('<html>') or '<' in service.data and '>' in service.data) %}
                                 <div class="data-html">
-                                    {{ service.data|safe }}
+                                    <iframe sandbox="allow-scripts allow-same-origin allow-forms" 
+                                            title="{{ service.name }} content"
+                                            data-card-id="{{ service.name|replace(' ', '_')|lower }}"
+                                            srcdoc="{{ service.data|e }}"></iframe>
                                 </div>
                             {% else %}
                                 <div class="data">

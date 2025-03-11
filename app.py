@@ -1,7 +1,8 @@
 import json
 import os
 import requests
-from flask import Flask, render_template, request, jsonify, redirect, url_for
+import re
+from flask import Flask, render_template, request, jsonify, redirect, url_for, Response
 
 app = Flask(__name__)
 
@@ -31,6 +32,8 @@ def fetch_data_from_service(service):
                 data = response.json()
             elif 'text/html' in content_type:
                 data = response.text
+                # Add our card container CSS to HTML content if needed
+                data = inject_card_container_css(data, service['name'])
             else:
                 data = response.text
                 
@@ -54,6 +57,71 @@ def fetch_data_from_service(service):
             'status': f'Error: {str(e)}',
             'data': None
         }
+
+def inject_card_container_css(html_content, service_name):
+    """Inject CSS and JavaScript to ensure proper containment within card."""
+    # Only inject if it's a complete HTML document
+    if not html_content.strip().startswith('<!DOCTYPE') and not html_content.strip().startswith('<html'):
+        return html_content
+    
+    # Sanitize service name for use as a message identifier
+    service_id = service_name.lower().replace(' ', '_')
+    
+    # Inject script for parent-container communication
+    script_tag = f"""
+    <script>
+    // Function to handle messages from inside the card
+    function handleCardAction(action, data) {{
+        // Create a message for the parent window
+        const message = {{
+            serviceId: '{service_id}',
+            action: action,
+            data: data
+        }};
+        
+        // Send message to parent window
+        window.parent.postMessage(message, '*');
+    }}
+    
+    // Add this to any buttons or interactive elements
+    // Example: <button onclick="handleCardAction('customAction', {{key: 'value'}})">Do Something</button>
+    </script>
+    """
+    
+    # Style tag to ensure content fits within card
+    style_tag = """
+    <style>
+    html, body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        height: 100%;
+        font-family: Arial, sans-serif;
+    }
+    body {
+        padding: 8px;
+        box-sizing: border-box;
+    }
+    img, video, iframe {
+        max-width: 100%;
+        height: auto;
+    }
+    </style>
+    """
+    
+    # Try to inject before the closing head tag
+    if '</head>' in html_content:
+        html_content = html_content.replace('</head>', f'{style_tag}{script_tag}</head>')
+    else:
+        # If no head tag, add after the opening body tag
+        if '<body' in html_content:
+            body_pos = html_content.find('<body')
+            end_body_tag = html_content.find('>', body_pos)
+            if end_body_tag != -1:
+                injection_point = end_body_tag + 1
+                html_content = html_content[:injection_point] + f'{style_tag}{script_tag}' + html_content[injection_point:]
+    
+    return html_content
 
 @app.route('/')
 def home():
@@ -79,6 +147,36 @@ def refresh_service_data():
             return jsonify(service_data)
     
     return jsonify({"error": "Service not found"}), 404
+
+@app.route('/card-action', methods=['POST'])
+def card_action():
+    """Handle actions triggered from within a card."""
+    try:
+        data = request.json
+        service_id = data.get('serviceId')
+        action = data.get('action')
+        action_data = data.get('data', {})
+        
+        # Log the action for debugging
+        app.logger.info(f"Card action received: {service_id} - {action}")
+        
+        # Handle different types of actions
+        result = {"status": "success", "message": "Action received"}
+        
+        # Here you can implement custom actions based on the action type
+        # For example, if action is 'fetch-data' you might fetch data from a specific source
+        if action == 'test-connection':
+            # Example: test a connection
+            result["data"] = {"connection": "successful"}
+        elif action == 'run-command':
+            # Example: run a command
+            command = action_data.get('command')
+            result["data"] = {"command": command, "executed": True}
+        
+        return jsonify(result)
+    except Exception as e:
+        app.logger.error(f"Error processing card action: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/settings', methods=['GET', 'POST'])
 def settings():
