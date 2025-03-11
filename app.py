@@ -9,6 +9,13 @@ app = Flask(__name__)
 
 CONFIG_FILE = 'config.json'
 
+# URL mappings for form submissions and links
+# This maps external URLs to internal Docker network URLs
+URL_MAPPINGS = {
+    "http://4.223.117.60:5100": "http://172.17.0.4:8080",
+    # Add more mappings as needed
+}
+
 def load_config():
     """Load configuration from the config file."""
     if os.path.exists(CONFIG_FILE):
@@ -137,7 +144,7 @@ def iframe_content(service_name):
     if not service_data.get('data'):
         return f"Error: {service_data.get('status', 'No data available')}", 500
     
-    # For HTML content, return directly to be rendered in iframe
+    # For HTML content, process and return directly to be rendered in iframe
     content_type = 'text/plain'
     if isinstance(service_data['data'], str) and (
         service_data['data'].startswith('<!DOCTYPE html>') or 
@@ -145,8 +152,43 @@ def iframe_content(service_name):
         ('<' in service_data['data'] and '>' in service_data['data'])
     ):
         content_type = 'text/html'
-        return Response(service_data['data'], mimetype=content_type)
-    
+        html_content = service_data['data']
+        
+        # URL rewriting for form actions and links
+        try:
+            soup = BeautifulSoup(html_content, 'html.parser')
+            
+            # Look for form elements with action attribute
+            for form in soup.find_all('form'):
+                action = form.get('action')
+                if action:
+                    # Check for each mapping and replace if found in the action URL
+                    for external_url, internal_url in URL_MAPPINGS.items():
+                        if external_url in action:
+                            new_action = action.replace(external_url, internal_url)
+                            form['action'] = new_action
+                            print(f"Rewrote form action from {action} to {new_action}")
+                            break
+            
+            # Update links too if needed
+            for link in soup.find_all('a'):
+                href = link.get('href')
+                if href:
+                    # Check for each mapping and replace if found in the href URL
+                    for external_url, internal_url in URL_MAPPINGS.items():
+                        if external_url in href:
+                            new_href = href.replace(external_url, internal_url)
+                            link['href'] = new_href
+                            print(f"Rewrote link href from {href} to {new_href}")
+                            break
+            
+            # Return the modified HTML
+            return Response(str(soup), mimetype=content_type)
+        except Exception as e:
+            print(f"Error rewriting URLs: {e}")
+            # Fall back to unmodified content
+            return Response(html_content, mimetype=content_type)
+        
     # For other types, wrap in a simple HTML template
     html_template = f"""
     <!DOCTYPE html>
