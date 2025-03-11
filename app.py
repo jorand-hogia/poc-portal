@@ -67,7 +67,7 @@ def inject_card_container_css(html_content, service_name):
     # Sanitize service name for use as a message identifier
     service_id = service_name.lower().replace(' ', '_')
     
-    # Inject script for parent-container communication
+    # Inject script for parent-container communication and resizing
     script_tag = f"""
     <script>
     // Function to handle messages from inside the card
@@ -83,7 +83,45 @@ def inject_card_container_css(html_content, service_name):
         window.parent.postMessage(message, '*');
     }}
     
-    // Add this to any buttons or interactive elements
+    // Listen for resize messages from parent
+    window.addEventListener('message', function(event) {{
+        if (event.data && event.data.type === 'card-resize') {{
+            // Adjust content based on new dimensions
+            applyResponsiveStyles(event.data.width, event.data.height);
+        }}
+    }});
+    
+    // Function to apply responsive styles based on container size
+    function applyResponsiveStyles(width, height) {{
+        // You can implement responsive behavior here
+        // For example, hide elements when width is small
+        if (width < 300) {{
+            document.querySelectorAll('.hide-on-small').forEach(el => {{
+                el.style.display = 'none';
+            }});
+        }} else {{
+            document.querySelectorAll('.hide-on-small').forEach(el => {{
+                el.style.display = '';
+            }});
+        }}
+    }}
+    
+    // Add resize observer to track content changes
+    document.addEventListener('DOMContentLoaded', function() {{
+        // Initialize any responsive behavior
+        setTimeout(function() {{
+            // Request optimal size from parent
+            handleCardAction('resize-request', {{
+                contentHeight: document.body.scrollHeight
+            }});
+            
+            // Apply initial responsive styles
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            applyResponsiveStyles(width, height);
+        }}, 100);
+    }});
+    
     // Example: <button onclick="handleCardAction('customAction', {{key: 'value'}})">Do Something</button>
     </script>
     """
@@ -94,9 +132,11 @@ def inject_card_container_css(html_content, service_name):
     html, body {
         margin: 0;
         padding: 0;
-        overflow: hidden;
+        overflow: auto;
         height: 100%;
+        width: 100%;
         font-family: Arial, sans-serif;
+        box-sizing: border-box;
     }
     body {
         padding: 8px;
@@ -105,6 +145,21 @@ def inject_card_container_css(html_content, service_name):
     img, video, iframe {
         max-width: 100%;
         height: auto;
+    }
+    
+    /* Responsive classes you can use in HTML content */
+    .hide-on-small {
+        /* Will be hidden when container is narrow */
+    }
+    .responsive-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 8px;
+    }
+    @media (max-width: 300px) {
+        .responsive-text {
+            font-size: 0.8em;
+        }
     }
     </style>
     """
@@ -164,7 +219,6 @@ def card_action():
         result = {"status": "success", "message": "Action received"}
         
         # Here you can implement custom actions based on the action type
-        # For example, if action is 'fetch-data' you might fetch data from a specific source
         if action == 'test-connection':
             # Example: test a connection
             result["data"] = {"connection": "successful"}
@@ -172,6 +226,15 @@ def card_action():
             # Example: run a command
             command = action_data.get('command')
             result["data"] = {"command": command, "executed": True}
+        elif action == 'resize-request':
+            # Handle resize request from content
+            content_height = action_data.get('contentHeight', 0)
+            result["data"] = {"height": content_height}
+            # Return a callback to trigger in the iframe
+            result["callback"] = {
+                "action": "height-updated",
+                "height": content_height
+            }
         
         return jsonify(result)
     except Exception as e:

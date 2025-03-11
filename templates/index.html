@@ -171,12 +171,15 @@
             height: calc(100% - 100px);
             min-height: 50px;
             position: relative;
+            display: flex;
+            flex-direction: column;
         }
         .card .data-html iframe {
             border: none;
             width: 100%;
             height: 100%;
             display: block;
+            flex: 1;
         }
         .welcome-card {
             background: white;
@@ -385,8 +388,10 @@
                             iframeDoc.write(serviceData.data);
                             iframeDoc.close();
                             
-                            // Adjust iframe height based on content
-                            this.adjustIframeHeight(iframe);
+                            // Resize iframe content to fit card
+                            setTimeout(() => {
+                                this.resizeCardContent();
+                            }, 100);
                         };
                         
                         // Set a blank initial src to trigger load event
@@ -401,21 +406,6 @@
                     
                     // Insert before resize handle
                     this.cardElement.insertBefore(dataContainer, this.resizeHandle);
-                }
-            }
-            
-            adjustIframeHeight(iframe) {
-                try {
-                    // Try to get the content height
-                    const bodyHeight = iframe.contentWindow.document.body.scrollHeight;
-                    const htmlHeight = iframe.contentWindow.document.documentElement.scrollHeight;
-                    const height = Math.max(bodyHeight, htmlHeight);
-                    
-                    // Set a reasonable max height to prevent excessive expansion
-                    const maxHeight = 500;
-                    iframe.style.height = Math.min(height, maxHeight) + 'px';
-                } catch (e) {
-                    console.error('Error adjusting iframe height:', e);
                 }
             }
             
@@ -461,6 +451,9 @@
                         if (newHeight > minHeight) {
                             this.cardElement.style.height = newHeight + 'px';
                         }
+                        
+                        // Resize iframe content if present
+                        this.resizeCardContent();
                     };
                     
                     const onMouseUp = () => {
@@ -472,6 +465,9 @@
                         // Save dimensions to localStorage with debounce
                         saveCardSize(this.cardElement.style.width, this.cardElement.style.height);
                         
+                        // Final resize of content
+                        this.resizeCardContent();
+                        
                         // Remove event listeners
                         document.removeEventListener('mousemove', onMouseMove);
                         document.removeEventListener('mouseup', onMouseUp);
@@ -481,6 +477,34 @@
                     document.addEventListener('mousemove', onMouseMove);
                     document.addEventListener('mouseup', onMouseUp);
                 });
+            }
+            
+            // Method to resize the card content based on card dimensions
+            resizeCardContent() {
+                const iframe = this.cardElement.querySelector('iframe');
+                if (!iframe) return;
+                
+                // Calculate available height for the iframe
+                const cardHeight = this.cardElement.offsetHeight;
+                const cardHeaderHeight = 100; // Approximate height of header elements
+                const availableHeight = cardHeight - cardHeaderHeight;
+                
+                // Get the data-html container
+                const container = this.cardElement.querySelector('.data-html');
+                if (container) {
+                    container.style.height = `${Math.max(availableHeight, 50)}px`;
+                }
+                
+                // Notify the iframe content about the resize
+                try {
+                    iframe.contentWindow.postMessage({
+                        type: 'card-resize',
+                        width: iframe.offsetWidth,
+                        height: iframe.offsetHeight
+                    }, '*');
+                } catch (e) {
+                    // Ignore errors with cross-origin frames
+                }
             }
         }
         
