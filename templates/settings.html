@@ -109,29 +109,35 @@
             background-color: #c82333;
         }
         .service-list {
-            margin-top: 2rem;
+            list-style: none;
+            padding: 0;
+            margin: 0;
         }
         .service-item {
-            background-color: #f8f9fa;
-            border-radius: 5px;
-            padding: 1rem;
-            margin-bottom: 1rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            padding: 1rem;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin-bottom: 0.8rem;
+            background-color: #f8f9fa;
+        }
+        .service-info {
+            flex: 1;
         }
         .service-info h3 {
-            margin: 0 0 0.5rem;
+            margin: 0 0 0.5rem 0;
             color: #333;
         }
-        .service-info .url {
+        .service-info p {
+            margin: 0;
             color: #6c757d;
             font-size: 0.9rem;
             word-break: break-all;
         }
         .service-actions {
-            display: flex;
-            gap: 0.5rem;
+            margin-left: 1rem;
         }
         .test-result {
             margin-top: 1rem;
@@ -139,155 +145,127 @@
             border-radius: 5px;
             display: none;
         }
-        .test-result.success {
+        .test-success {
             background-color: #d4edda;
             color: #155724;
+            border: 1px solid #c3e6cb;
         }
-        .test-result.error {
+        .test-error {
             background-color: #f8d7da;
             color: #721c24;
-        }
-        .clock-container {
-            text-align: right;
-            margin-bottom: 1rem;
-        }
-        #clock {
-            display: inline-block;
-            background: rgba(255, 255, 255, 0.8);
-            padding: 0.5rem 1rem;
-            border-radius: 50px;
-            font-size: 1rem;
-            color: #333;
-        }
-        .loading {
-            display: inline-block;
-            width: 1rem;
-            height: 1rem;
-            border: 2px solid rgba(255, 255, 255, 0.3);
-            border-radius: 50%;
-            border-top-color: white;
-            animation: spin 1s ease-in-out infinite;
-            margin-left: 0.5rem;
-            vertical-align: middle;
-        }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
+            border: 1px solid #f5c6cb;
         }
     </style>
-    <script>
-        function updateClock() {
-            const now = new Date();
-            const utcOffset = now.getTimezoneOffset();
-            const cetOffset = 60; // CET is UTC+1
-            const cetTime = new Date(now.getTime() + (cetOffset + utcOffset) * 60000);
-            const hours = String(cetTime.getHours()).padStart(2, '0');
-            const minutes = String(cetTime.getMinutes()).padStart(2, '0');
-            const seconds = String(cetTime.getSeconds()).padStart(2, '0');
-            document.getElementById('clock').textContent = `${hours}:${minutes}:${seconds} CET`;
-        }
-
-        window.onload = function() {
-            updateClock();
-            setInterval(updateClock, 1000);
-
-            // Add test connection functionality
-            document.getElementById('test-connection').addEventListener('click', async function() {
-                const urlInput = document.getElementById('url');
-                const testResult = document.getElementById('test-result');
-                const testButton = this;
-                const loadingSpinner = document.createElement('span');
-                loadingSpinner.className = 'loading';
-                
-                testButton.disabled = true;
-                testButton.appendChild(loadingSpinner);
-                testResult.style.display = 'none';
-                
-                try {
-                    const response = await fetch('/test-connection', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ url: urlInput.value }),
-                    });
-                    
-                    const data = await response.json();
-                    
-                    testResult.textContent = data.message;
-                    testResult.className = data.status === 'Success' 
-                        ? 'test-result success' 
-                        : 'test-result error';
-                    testResult.style.display = 'block';
-                } catch (error) {
-                    testResult.textContent = 'Error testing connection: ' + error.message;
-                    testResult.className = 'test-result error';
-                    testResult.style.display = 'block';
-                } finally {
-                    testButton.removeChild(loadingSpinner);
-                    testButton.disabled = false;
-                }
-            });
-        };
-    </script>
 </head>
 <body>
     <div class="container">
-        <div class="clock-container">
-            <div id="clock"></div>
-        </div>
-        
-        <div class="header">
+        <header class="header">
             <h1>Barda Settings</h1>
             <nav>
                 <a href="/">Home</a>
-                <a href="/settings">Settings</a>
             </nav>
-        </div>
-        
+        </header>
+
         <div class="settings-container">
             <div class="card">
-                <h2>Add External Service</h2>
-                <form action="/settings" method="POST">
+                <h2>Add New Service</h2>
+                <form id="add-service-form" action="/settings" method="POST">
                     <div class="form-group">
-                        <label for="name">Service Name</label>
-                        <input type="text" id="name" name="name" required placeholder="Enter service name">
+                        <label for="service_name">Service Name</label>
+                        <input type="text" id="service_name" name="service_name" required placeholder="Enter a name for this service">
                     </div>
                     <div class="form-group">
-                        <label for="url">Service URL</label>
-                        <input type="text" id="url" name="url" required placeholder="Enter service URL (e.g., http://example.com/api)">
+                        <label for="service_url">Service URL</label>
+                        <input type="url" id="service_url" name="service_url" required placeholder="https://example.com/service">
                     </div>
-                    <div style="display: flex; gap: 1rem;">
-                        <button type="submit" class="button">Add Service</button>
-                        <button type="button" id="test-connection" class="button test">Test Connection</button>
-                    </div>
+                    <button type="button" id="test-connection" class="button test">Test Connection</button>
+                    <button type="submit" class="button">Add Service</button>
                 </form>
                 <div id="test-result" class="test-result"></div>
             </div>
-            
+
             <div class="card">
-                <h2>Configured Services</h2>
+                <h2>Manage Services</h2>
                 {% if services %}
-                    <div class="service-list">
+                    <ul class="service-list">
                         {% for service in services %}
-                            <div class="service-item">
+                            <li class="service-item">
                                 <div class="service-info">
                                     <h3>{{ service.name }}</h3>
-                                    <div class="url">{{ service.url }}</div>
+                                    <p>{{ service.url }}</p>
                                 </div>
                                 <div class="service-actions">
-                                    <form action="/remove-service" method="POST" onsubmit="return confirm('Are you sure you want to remove this service?');">
-                                        <input type="hidden" name="name" value="{{ service.name }}">
+                                    <form action="/remove-service" method="POST" style="display: inline-block;">
+                                        <input type="hidden" name="service_name" value="{{ service.name }}">
                                         <button type="submit" class="button remove">Remove</button>
                                     </form>
                                 </div>
-                            </div>
+                            </li>
                         {% endfor %}
-                    </div>
+                    </ul>
                 {% else %}
-                    <p>No services configured yet. Add your first service using the form.</p>
+                    <p>No services configured yet. Use the form to add your first service.</p>
                 {% endif %}
             </div>
         </div>
     </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const testButton = document.getElementById('test-connection');
+            const testResult = document.getElementById('test-result');
+            const urlInput = document.getElementById('service_url');
+            
+            testButton.addEventListener('click', async function() {
+                // Reset test result
+                testResult.innerHTML = 'Testing connection...';
+                testResult.className = 'test-result';
+                testResult.style.display = 'block';
+                
+                const url = urlInput.value;
+                if (!url) {
+                    testResult.innerHTML = 'Please enter a URL first';
+                    testResult.className = 'test-result test-error';
+                    return;
+                }
+                
+                try {
+                    // Create form data
+                    const formData = new FormData();
+                    formData.append('url', url);
+                    
+                    // Send request
+                    const response = await fetch('/test-connection', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    const result = await response.json();
+                    
+                    // Update UI based on result
+                    testResult.innerHTML = result.message;
+                    if (result.status === 'Connected') {
+                        testResult.className = 'test-result test-success';
+                        if (result.preview) {
+                            testResult.innerHTML += `<br><small>${result.preview}</small>`;
+                        }
+                    } else {
+                        testResult.className = 'test-result test-error';
+                    }
+                } catch (error) {
+                    testResult.innerHTML = 'Test failed: ' + error.message;
+                    testResult.className = 'test-result test-error';
+                }
+            });
+            
+            // Auto-format URL input
+            urlInput.addEventListener('blur', function() {
+                const url = urlInput.value.trim();
+                if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+                    urlInput.value = 'https://' + url;
+                }
+            });
+        });
+    </script>
 </body>
 </html> 
