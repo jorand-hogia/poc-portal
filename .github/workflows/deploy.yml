@@ -1,0 +1,37 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["Docker Build"]
+    branches: [main]
+    types:
+      - completed
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Display deployment info
+      run: |
+        echo "Deployment would start here..."
+        echo "Container: ghcr.io/${{ github.repository }}:latest"
+        echo "Timestamp: $(date -u)"
+        
+    - name: Simulate deployment
+      run: |
+        echo "Pulling the latest image..."
+        echo "Stopping the existing container..."
+        echo "Starting a new container with the latest image..."
+        echo "Deployment simulation completed!"
+        
+    # In a real deployment, you might use SSH to connect to your server
+    # and run Docker commands, or use a cloud provider's GitHub Actions integration
+    
+    - name: Deployment success notification
+      run: |
+        echo "The application has been successfully deployed!" 
