@@ -28,12 +28,32 @@
         p {
             color: #666;
         }
+        #clock {
+            font-size: 1.5rem;
+            color: #333;
+            margin-top: 1rem;
+        }
     </style>
+    <script>
+        function updateClock() {
+            const now = new Date();
+            const utcOffset = now.getTimezoneOffset();
+            const cetOffset = 60; // CET is UTC+1
+            const cetTime = new Date(now.getTime() + (cetOffset + utcOffset) * 60000);
+            const hours = String(cetTime.getHours()).padStart(2, '0');
+            const minutes = String(cetTime.getMinutes()).padStart(2, '0');
+            const seconds = String(cetTime.getSeconds()).padStart(2, '0');
+            document.getElementById('clock').textContent = `${hours}:${minutes}:${seconds}`;
+        }
+        setInterval(updateClock, 1000);
+        window.onload = updateClock;
+    </script>
 </head>
 <body>
     <div class="container">
         <h1>Hello, World! 👋</h1>
         <p>Welcome to your first Flask web page.</p>
+        <div id="clock"></div>
     </div>
 </body>
 </html> 
