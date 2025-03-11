@@ -370,12 +370,17 @@
                     const dataContainer = document.createElement('div');
                     dataContainer.className = isHtml ? 'data-html' : 'data';
                     
+                    // Store the service's base URL for proper form submissions
+                    if (serviceData.base_url) {
+                        dataContainer.dataset.baseUrl = serviceData.base_url;
+                    }
+                    
                     if (isHtml) {
                         // Create iframe for isolation with proper styling
                         const iframe = document.createElement('iframe');
                         
                         // Set sandbox attributes to allow necessary functionality but maintain security
-                        iframe.sandbox = 'allow-scripts allow-same-origin allow-forms allow-popups';
+                        iframe.sandbox = 'allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation';
                         iframe.title = `${this.serviceName} content`;
                         
                         // Add reference to parent card
@@ -414,6 +419,28 @@
                                             oldScript.parentNode.replaceChild(newScript, oldScript);
                                         }
                                     });
+                                    
+                                    // Process any forms to ensure proper routing
+                                    if (serviceData.base_url) {
+                                        const forms = iframeDoc.querySelectorAll('form');
+                                        forms.forEach(form => {
+                                            // If no action or relative action
+                                            if (!form.hasAttribute('action') || !form.action.includes('://')) {
+                                                // For empty action (submits to current URL)
+                                                if (!form.hasAttribute('action') || form.getAttribute('action') === '') {
+                                                    form.setAttribute('action', serviceData.base_url);
+                                                } else {
+                                                    const actionValue = form.getAttribute('action');
+                                                    // If action starts with /
+                                                    if (actionValue.startsWith('/')) {
+                                                        form.setAttribute('action', serviceData.base_url + actionValue);
+                                                    }
+                                                }
+                                                // Open in new window to avoid navigation issues
+                                                form.setAttribute('target', '_blank');
+                                            }
+                                        });
+                                    }
                                 }
                                 
                                 // Resize iframe content to fit card
@@ -555,6 +582,40 @@
                     }
                 }
             }
+            
+            // Method to handle a button click from card content
+            handleCardAction(action, data) {
+                console.log(`Card action requested: ${action}`, data);
+                
+                // Process actions directly from card content
+                if (action === 'navigate' && data.url) {
+                    // Open URLs in new windows/tabs
+                    window.open(data.url, '_blank');
+                } else if (action === 'submit-form' && data.formData) {
+                    // Handle form submissions from card content
+                    const baseUrl = this.cardElement.querySelector('.data-html')?.dataset.baseUrl;
+                    if (baseUrl && data.action) {
+                        // Construct proper URL for form submission
+                        let actionUrl = data.action;
+                        if (actionUrl.startsWith('/')) {
+                            actionUrl = baseUrl + actionUrl;
+                        } else if (!actionUrl.includes('://')) {
+                            // Relative URL
+                            actionUrl = baseUrl + '/' + actionUrl;
+                        }
+                        
+                        // Open form submission in new window
+                        const formWindow = window.open(actionUrl, '_blank');
+                        if (formWindow) {
+                            // Pass the form data (for GET requests)
+                            console.log('Form submitted to:', actionUrl);
+                        }
+                    }
+                }
+                
+                // Forward to global handler for server-side processing
+                processCardAction(this.serviceId, action, data, this.cardElement);
+            }
         }
         
         // Function to handle messages from card iframes
@@ -571,8 +632,14 @@
             const cardElement = document.querySelector(`.card[data-service-id="${serviceId}"]`);
             if (!cardElement) return;
             
-            // Process the action
-            processCardAction(serviceId, action, data, cardElement);
+            // Get the card instance and use its handleCardAction method if available
+            const cardInstance = cardElement._cardInstance;
+            if (cardInstance && typeof cardInstance.handleCardAction === 'function') {
+                cardInstance.handleCardAction(action, data);
+            } else {
+                // Fallback to global handler
+                processCardAction(serviceId, action, data, cardElement);
+            }
         }
         
         // Function to process card actions
@@ -631,6 +698,64 @@
                 const cardInstance = new ServiceCard(cardElement);
                 // Store the instance reference on the element for easy access
                 cardElement._cardInstance = cardInstance;
+                
+                // Process existing iframes to modify form targets
+                const iframe = cardElement.querySelector('iframe');
+                if (iframe) {
+                    // Add a loaded flag to ensure we only process once
+                    if (!iframe.dataset.processed) {
+                        iframe.dataset.processed = "true";
+                        
+                        // When iframe loads, process forms if we can access them
+                        iframe.addEventListener('load', () => {
+                            try {
+                                // Get iframe's document
+                                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                                
+                                // Process forms to ensure proper submissions
+                                const baseUrl = cardElement.querySelector('.data-html')?.dataset.baseUrl;
+                                if (baseUrl) {
+                                    iframeDoc.querySelectorAll('form').forEach(form => {
+                                        if (!form.hasAttribute('action') || !form.action.includes('://')) {
+                                            // Correct the form action to absolute URL
+                                            if (!form.hasAttribute('action') || form.getAttribute('action') === '') {
+                                                form.setAttribute('action', baseUrl);
+                                            } else {
+                                                const actionVal = form.getAttribute('action');
+                                                if (actionVal.startsWith('/')) {
+                                                    form.setAttribute('action', baseUrl + actionVal);
+                                                }
+                                            }
+                                            
+                                            // Open in new window to avoid navigation issues
+                                            if (!form.hasAttribute('target')) {
+                                                form.setAttribute('target', '_blank');
+                                            }
+                                        }
+                                    });
+                                    
+                                    // Also process links
+                                    iframeDoc.querySelectorAll('a').forEach(link => {
+                                        if (link.hasAttribute('href') && !link.href.includes('://') && !link.href.startsWith('#')) {
+                                            // If it's a root-relative URL
+                                            if (link.getAttribute('href').startsWith('/')) {
+                                                link.href = baseUrl + link.getAttribute('href');
+                                            }
+                                            
+                                            // Set target if not already set
+                                            if (!link.hasAttribute('target')) {
+                                                link.setAttribute('target', '_blank');
+                                            }
+                                        }
+                                    });
+                                }
+                            } catch (e) {
+                                // Likely cross-origin restrictions, we can't modify the iframe content
+                                console.debug('Could not process iframe forms due to security restrictions', e);
+                            }
+                        });
+                    }
+                }
             });
             
             // Listen for messages from iframes
@@ -669,8 +794,8 @@
                         <div class="url">{{ service.url }}</div>
                         {% if service.data %}
                             {% if service.data is string and (service.data.startswith('<!DOCTYPE html>') or service.data.startswith('<html>') or '<' in service.data and '>' in service.data) %}
-                                <div class="data-html">
-                                    <iframe sandbox="allow-scripts allow-same-origin allow-forms allow-popups" 
+                                <div class="data-html" data-base-url="{{ service.base_url }}">
+                                    <iframe sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation" 
                                             title="{{ service.name }} content"
                                             data-card-id="{{ service.name|replace(' ', '_')|lower }}"
                                             style="width:100%; height:100%; border:none; overflow:auto;"

@@ -54,6 +54,10 @@ def fetch_data_from_service(service):
         if response.status_code == 200:
             content_type = response.headers.get('content-type', '').lower()
             
+            # Get the base URL of the service for proper link resolution
+            service_base_url = '/'.join(service['url'].split('/')[:3])  # Extract http(s)://domain.com
+            service_path = '/'.join(service['url'].split('/')[3:])  # Extract the path
+            
             # Determine the data format based on content type
             if 'application/json' in content_type:
                 data = response.json()
@@ -61,8 +65,8 @@ def fetch_data_from_service(service):
                 data = response.text
                 # Process HTML content
                 data = process_html_content(data)
-                # Add our card container CSS to HTML content
-                data = inject_card_container_css(data, service['name'])
+                # Add our card container CSS to HTML content with the service URL
+                data = inject_card_container_css(data, service['name'], service_base_url, service_path)
             else:
                 data = response.text
                 
@@ -70,7 +74,8 @@ def fetch_data_from_service(service):
                 'name': service['name'],
                 'url': service['url'],
                 'status': 'Connected',
-                'data': data
+                'data': data,
+                'base_url': service_base_url
             }
         else:
             return {
@@ -87,7 +92,7 @@ def fetch_data_from_service(service):
             'data': None
         }
 
-def inject_card_container_css(html_content, service_name):
+def inject_card_container_css(html_content, service_name, service_base_url='', service_path=''):
     """Inject CSS and JavaScript to ensure proper containment within card."""
     # Only inject if it's a complete HTML document
     if not html_content.strip().startswith('<!DOCTYPE') and not html_content.strip().startswith('<html'):
@@ -147,11 +152,16 @@ def inject_card_container_css(html_content, service_name):
     
     # Inject script for parent-container communication and resizing
     card_script = f"""
+    // Service details
+    const SERVICE_ID = '{service_id}';
+    const SERVICE_BASE_URL = '{service_base_url}';
+    const SERVICE_PATH = '{service_path}';
+    
     // Function to handle messages from inside the card
     function handleCardAction(action, data) {{
         // Create a message for the parent window
         const message = {{
-            serviceId: '{service_id}',
+            serviceId: SERVICE_ID,
             action: action,
             data: data
         }};
@@ -159,6 +169,58 @@ def inject_card_container_css(html_content, service_name):
         // Send message to parent window
         window.parent.postMessage(message, '*');
     }}
+    
+    // Handle form submissions to maintain proper routing
+    document.addEventListener('DOMContentLoaded', function() {{
+        // Fix all form actions to use absolute URLs
+        document.querySelectorAll('form').forEach(form => {{
+            // Only modify forms without an explicit action or with a relative action
+            if (!form.hasAttribute('action') || !form.action.includes('://')) {{
+                // For empty action (submits to current URL)
+                if (!form.hasAttribute('action') || form.getAttribute('action') === '') {{
+                    form.setAttribute('action', window.location.href);
+                }} else {{
+                    let actionUrl = form.getAttribute('action');
+                    // If action starts with /, it's a root-relative URL
+                    if (actionUrl.startsWith('/')) {{
+                        form.setAttribute('action', SERVICE_BASE_URL + actionUrl);
+                    }} else {{
+                        // It's a document-relative URL
+                        let basePath = SERVICE_BASE_URL;
+                        if (SERVICE_PATH) {{
+                            // Remove file part from the path if present
+                            const pathParts = SERVICE_PATH.split('/');
+                            if (pathParts.length > 0 && pathParts[pathParts.length - 1].includes('.')) {{
+                                pathParts.pop();
+                            }}
+                            basePath += '/' + pathParts.join('/');
+                        }}
+                        // Make sure we don't double up on slashes
+                        if (basePath.endsWith('/') && actionUrl.startsWith('/')) {{
+                            actionUrl = actionUrl.substring(1);
+                        }} else if (!basePath.endsWith('/') && !actionUrl.startsWith('/')) {{
+                            actionUrl = '/' + actionUrl;
+                        }}
+                        form.setAttribute('action', basePath + actionUrl);
+                    }}
+                }}
+                
+                // Make form open in a new window to avoid navigation issues
+                form.setAttribute('target', '_blank');
+            }}
+        }});
+        
+        // Fix all links to use absolute URLs
+        document.querySelectorAll('a').forEach(link => {{
+            if (link.hasAttribute('href') && !link.href.includes('://') && !link.href.startsWith('#')) {{
+                let hrefUrl = link.getAttribute('href');
+                // If href starts with /, it's a root-relative URL
+                if (hrefUrl.startsWith('/')) {{
+                    link.setAttribute('href', SERVICE_BASE_URL + hrefUrl);
+                }}
+            }}
+        }});
+    }});
     
     // Listen for resize messages from parent
     window.addEventListener('message', function(event) {{
@@ -225,8 +287,13 @@ def inject_card_container_css(html_content, service_name):
         style_tag = f"<style>{base_style}</style>"
         script_tag = f"<script>{card_script}</script>"
         
+        # Add base tag for proper URL resolution before any other tags
+        base_tag = ""
+        if service_base_url:
+            base_tag = f'<base href="{service_base_url}/">'
+        
         # Insert before closing head tag
-        html_content = html_content.replace('</head>', f'{style_tag}{script_tag}</head>')
+        html_content = html_content.replace('</head>', f'{base_tag}{style_tag}{script_tag}</head>')
     else:
         # If no head tag exists, create one
         head_content = f"""
@@ -234,6 +301,8 @@ def inject_card_container_css(html_content, service_name):
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>{service_name} Content</title>
+            <!-- Base URL for proper link resolution -->
+            {f'<base href="{service_base_url}/">' if service_base_url else ''}
             <style>{base_style}</style>
             <script>{card_script}</script>
         </head>
@@ -253,11 +322,6 @@ def inject_card_container_css(html_content, service_name):
     # Ensure proper doctype if missing
     if '<!DOCTYPE' not in html_content and '<!doctype' not in html_content:
         html_content = '<!DOCTYPE html>\n' + html_content
-    
-    # Add content base target to prevent navigation breaking out of iframe
-    if '<base' not in html_content:
-        if '</head>' in html_content:
-            html_content = html_content.replace('</head>', '<base target="_self"></head>')
     
     return html_content
 
