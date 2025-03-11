@@ -66,6 +66,20 @@ def home():
     
     return render_template('index.html', services=service_data)
 
+@app.route('/refresh-service-data')
+def refresh_service_data():
+    """API endpoint to refresh service data without reloading the page."""
+    service_name = request.args.get('name')
+    config = load_config()
+    
+    # Find the service by name
+    for service in config['services']:
+        if service['name'] == service_name:
+            service_data = fetch_data_from_service(service)
+            return jsonify(service_data)
+    
+    return jsonify({"error": "Service not found"}), 404
+
 @app.route('/settings', methods=['GET', 'POST'])
 def settings():
     """Settings page for managing external service connections."""

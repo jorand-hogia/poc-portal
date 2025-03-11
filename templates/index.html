@@ -44,12 +44,80 @@
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
             gap: 1.5rem;
+            align-items: start;
         }
         .card {
             background: white;
             border-radius: 10px;
             padding: 1.5rem;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            position: relative;
+            transition: width 0.2s, height 0.2s;
+        }
+        .card.resizing {
+            box-shadow: 0 0 0 2px #6e8efb, 0 4px 10px rgba(0, 0, 0, 0.2);
+            transition: none;
+        }
+        .resize-handle {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 20px;
+            height: 20px;
+            cursor: nwse-resize;
+            background: #f0f0f0;
+            border-top-left-radius: 5px;
+            border-bottom-right-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .resize-handle::before {
+            content: "";
+            width: 8px;
+            height: 8px;
+            border-right: 2px solid #999;
+            border-bottom: 2px solid #999;
+        }
+        .card-controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            gap: 5px;
+        }
+        .size-reset, .refresh-card {
+            cursor: pointer;
+            background: #f0f0f0;
+            border: none;
+            border-radius: 3px;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            color: #666;
+        }
+        .size-reset:hover, .refresh-card:hover {
+            background: #e0e0e0;
+        }
+        .refresh-card.loading {
+            pointer-events: none;
+            opacity: 0.7;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .refresh-card.loading::after {
+            content: "";
+            width: 10px;
+            height: 10px;
+            border: 2px solid transparent;
+            border-top-color: #666;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            position: absolute;
         }
         .card h2 {
             margin-top: 0;
@@ -84,6 +152,8 @@
             max-height: 200px;
             overflow: auto;
             font-family: monospace;
+            height: calc(100% - 100px);
+            min-height: 50px;
         }
         .card .data iframe, 
         .card .data img,
@@ -98,6 +168,8 @@
             border-radius: 5px;
             max-height: 300px;
             overflow: auto;
+            height: calc(100% - 100px);
+            min-height: 50px;
         }
         .welcome-card {
             background: white;
@@ -154,6 +226,16 @@
         }
     </style>
     <script>
+        // Debounce function to limit how often a function runs
+        function debounce(func, wait) {
+            let timeout;
+            return function(...args) {
+                const context = this;
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(context, args), wait);
+            };
+        }
+        
         function updateClock() {
             const now = new Date();
             const utcOffset = now.getTimezoneOffset();
@@ -165,9 +247,180 @@
             document.getElementById('clock').textContent = `${hours}:${minutes}:${seconds} CET`;
         }
         
+        // Function to initialize card resizing
+        function initCardResizing() {
+            const cards = document.querySelectorAll('.card');
+            
+            // Apply saved sizes from localStorage
+            cards.forEach((card, index) => {
+                const serviceId = card.getAttribute('data-service-id');
+                const savedWidth = localStorage.getItem(`card_width_${serviceId}`);
+                const savedHeight = localStorage.getItem(`card_height_${serviceId}`);
+                
+                // Apply saved dimensions if they exist
+                if (savedWidth) card.style.width = savedWidth;
+                if (savedHeight) card.style.height = savedHeight;
+                
+                // Add resize handle
+                const resizeHandle = document.createElement('div');
+                resizeHandle.className = 'resize-handle';
+                card.appendChild(resizeHandle);
+                
+                // Add reset button
+                const controlsDiv = document.createElement('div');
+                controlsDiv.className = 'card-controls';
+                
+                const resetButton = document.createElement('button');
+                resetButton.className = 'size-reset';
+                resetButton.innerHTML = '⟲';
+                resetButton.title = 'Reset size';
+                controlsDiv.appendChild(resetButton);
+                
+                // Add refresh button
+                const refreshButton = document.createElement('button');
+                refreshButton.className = 'refresh-card';
+                refreshButton.innerHTML = '↻';
+                refreshButton.title = 'Refresh data';
+                controlsDiv.appendChild(refreshButton);
+                
+                card.appendChild(controlsDiv);
+                
+                // Reset button event
+                resetButton.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    card.style.width = '';
+                    card.style.height = '';
+                    // Clear saved dimensions
+                    localStorage.removeItem(`card_width_${serviceId}`);
+                    localStorage.removeItem(`card_height_${serviceId}`);
+                });
+                
+                // Refresh button event
+                refreshButton.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    refreshButton.classList.add('loading');
+                    refreshButton.innerHTML = '';
+                    
+                    try {
+                        // Get service name from the card title
+                        const serviceName = card.querySelector('h2').textContent.trim();
+                        
+                        // Fetch updated service data
+                        const response = await fetch(`/refresh-service-data?name=${encodeURIComponent(serviceName)}`);
+                        if (!response.ok) throw new Error('Failed to refresh data');
+                        
+                        const serviceData = await response.json();
+                        
+                        // Update card status
+                        const statusElement = card.querySelector('.status');
+                        statusElement.textContent = serviceData.status;
+                        statusElement.className = 'status';
+                        statusElement.classList.add(serviceData.status === 'Connected' ? 'connected' : 'error');
+                        
+                        // Update data section
+                        const existingDataSection = card.querySelector('.data, .data-html');
+                        if (existingDataSection) existingDataSection.remove();
+                        
+                        if (serviceData.data) {
+                            const isHtml = typeof serviceData.data === 'string' && 
+                                          (serviceData.data.startsWith('<!DOCTYPE html>') || 
+                                           serviceData.data.startsWith('<html>') || 
+                                           (serviceData.data.includes('<') && serviceData.data.includes('>')));
+                            
+                            const dataContainer = document.createElement('div');
+                            dataContainer.className = isHtml ? 'data-html' : 'data';
+                            
+                            if (isHtml) {
+                                dataContainer.innerHTML = serviceData.data;
+                            } else {
+                                const pre = document.createElement('pre');
+                                pre.textContent = typeof serviceData.data === 'object' ? 
+                                    JSON.stringify(serviceData.data, null, 2) : 
+                                    serviceData.data;
+                                dataContainer.appendChild(pre);
+                            }
+                            
+                            // Insert before resize handle
+                            card.insertBefore(dataContainer, card.querySelector('.resize-handle'));
+                        }
+                    } catch (error) {
+                        console.error('Error refreshing card data:', error);
+                        alert('Failed to refresh data: ' + error.message);
+                    } finally {
+                        refreshButton.classList.remove('loading');
+                        refreshButton.innerHTML = '↻';
+                    }
+                });
+                
+                // Variables for resize logic
+                let isResizing = false;
+                let startX, startY, startWidth, startHeight;
+                
+                // Debounced save function
+                const saveCardSize = debounce((id, width, height) => {
+                    localStorage.setItem(`card_width_${id}`, width);
+                    localStorage.setItem(`card_height_${id}`, height);
+                }, 300); // 300ms delay
+                
+                // Mouse down event on resize handle
+                resizeHandle.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    isResizing = true;
+                    startX = e.clientX;
+                    startY = e.clientY;
+                    startWidth = card.offsetWidth;
+                    startHeight = card.offsetHeight;
+                    
+                    // Add resizing class for visual feedback
+                    card.classList.add('resizing');
+                    
+                    // Add mouse move and mouse up event listeners
+                    document.addEventListener('mousemove', onMouseMove);
+                    document.addEventListener('mouseup', onMouseUp);
+                });
+                
+                // Mouse move handler
+                function onMouseMove(e) {
+                    if (!isResizing) return;
+                    
+                    // Calculate new width and height
+                    const newWidth = startWidth + (e.clientX - startX);
+                    const newHeight = startHeight + (e.clientY - startY);
+                    
+                    // Apply minimum dimensions
+                    const minWidth = 250;
+                    const minHeight = 200;
+                    
+                    if (newWidth > minWidth) {
+                        card.style.width = newWidth + 'px';
+                    }
+                    
+                    if (newHeight > minHeight) {
+                        card.style.height = newHeight + 'px';
+                    }
+                }
+                
+                // Mouse up handler
+                function onMouseUp() {
+                    isResizing = false;
+                    
+                    // Remove resizing class
+                    card.classList.remove('resizing');
+                    
+                    // Save dimensions to localStorage with debounce
+                    saveCardSize(serviceId, card.style.width, card.style.height);
+                    
+                    // Remove event listeners
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                }
+            });
+        }
+        
         window.onload = function() {
             updateClock();
             setInterval(updateClock, 1000);
+            initCardResizing();
         };
     </script>
 </head>
@@ -188,7 +441,7 @@
         {% if services %}
             <div class="service-cards">
                 {% for service in services %}
-                    <div class="card">
+                    <div class="card" data-service-id="{{ service.name|replace(' ', '_')|lower }}">
                         <h2>{{ service.name }}</h2>
                         <div class="status {% if service.status == 'Connected' %}connected{% else %}error{% endif %}">
                             {{ service.status }}
