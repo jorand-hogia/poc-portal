@@ -190,37 +190,318 @@ def iframe_content(service_name):
             return Response(html_content, mimetype=content_type)
         
     # For other types, wrap in a simple HTML template
-    html_template = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>{service_name} Content</title>
-        <style>
-            body {{
-                font-family: Arial, sans-serif;
-                margin: 0;
-                padding: 8px;
-                overflow: auto;
-                height: 100%;
-                box-sizing: border-box;
-            }}
-            pre {{
-                white-space: pre-wrap;
-                margin: 0;
-            }}
-            img, video {{
-                max-width: 100%;
-                height: auto;
-            }}
-        </style>
-    </head>
-    <body>
-        <pre>{json.dumps(service_data['data'], indent=2) if isinstance(service_data['data'], (dict, list)) else service_data['data']}</pre>
-    </body>
-    </html>
-    """
+    if isinstance(service_data['data'], (dict, list)):
+        # Format JSON data with syntax highlighting and collapsible sections
+        html_template = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>{service_name} Content</title>
+            <style>
+                body {{
+                    font-family: 'Arial', sans-serif;
+                    margin: 0;
+                    padding: 16px;
+                    overflow: auto;
+                    height: 100%;
+                    box-sizing: border-box;
+                    background-color: #f8f9fa;
+                    color: #333;
+                    line-height: 1.5;
+                }}
+                .json-container {{
+                    background-color: white;
+                    border-radius: 6px;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    padding: 16px;
+                    overflow: auto;
+                }}
+                .json-key {{
+                    color: #0066cc;
+                    font-weight: bold;
+                }}
+                .json-value {{
+                    margin-left: 10px;
+                }}
+                .json-string {{
+                    color: #008800;
+                }}
+                .json-number {{
+                    color: #aa0000;
+                }}
+                .json-boolean {{
+                    color: #0000dd;
+                    font-weight: bold;
+                }}
+                .json-null {{
+                    color: #999;
+                    font-style: italic;
+                }}
+                .collapsible {{
+                    cursor: pointer;
+                    user-select: none;
+                }}
+                .collapsible::before {{
+                    content: '▼';
+                    display: inline-block;
+                    margin-right: 5px;
+                    transition: transform 0.2s;
+                }}
+                .collapsed::before {{
+                    transform: rotate(-90deg);
+                }}
+                .collapsed + ul, .collapsed + pre {{
+                    display: none;
+                }}
+                ul {{
+                    list-style-type: none;
+                    padding-left: 20px;
+                    margin: 0;
+                }}
+                li {{
+                    padding: 3px 0;
+                }}
+                .json-toolbar {{
+                    margin-bottom: 10px;
+                    padding-bottom: 10px;
+                    border-bottom: 1px solid #eee;
+                }}
+                .json-toolbar button {{
+                    background-color: #f0f0f0;
+                    border: 1px solid #ddd;
+                    border-radius: 4px;
+                    padding: 5px 10px;
+                    margin-right: 8px;
+                    cursor: pointer;
+                    font-size: 14px;
+                }}
+                .json-toolbar button:hover {{
+                    background-color: #e8e8e8;
+                }}
+                .json-toolbar button:active {{
+                    background-color: #ddd;
+                }}
+                pre {{
+                    white-space: pre-wrap;
+                    margin: 0;
+                    font-family: monospace;
+                }}
+                img, video {{
+                    max-width: 100%;
+                    height: auto;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="json-toolbar">
+                <button onclick="expandAll()">Expand All</button>
+                <button onclick="collapseAll()">Collapse All</button>
+                <button onclick="copyToClipboard()">Copy JSON</button>
+            </div>
+            <div class="json-container" id="json-container">
+            </div>
+            
+            <script>
+                // Store the original JSON data
+                const jsonData = {json.dumps(service_data['data'])};
+                
+                // Function to create interactive JSON viewer
+                function renderJSON(data, container) {{
+                    if (Array.isArray(data)) {{
+                        renderArray(data, container);
+                    }} else if (data && typeof data === 'object') {{
+                        renderObject(data, container);
+                    }} else {{
+                        renderPrimitive(data, container);
+                    }}
+                }}
+                
+                function renderObject(obj, container) {{
+                    const keys = Object.keys(obj);
+                    if (keys.length === 0) {{
+                        const emptyObj = document.createElement('span');
+                        emptyObj.className = 'json-value';
+                        emptyObj.textContent = '{{ }}';
+                        container.appendChild(emptyObj);
+                        return;
+                    }}
+                    
+                    const objSpan = document.createElement('span');
+                    objSpan.className = 'collapsible';
+                    objSpan.textContent = '{{ ';
+                    objSpan.addEventListener('click', function(e) {{
+                        e.stopPropagation();
+                        this.classList.toggle('collapsed');
+                    }});
+                    container.appendChild(objSpan);
+                    
+                    const list = document.createElement('ul');
+                    container.appendChild(list);
+                    
+                    keys.forEach((key, index) => {{
+                        const listItem = document.createElement('li');
+                        list.appendChild(listItem);
+                        
+                        const keySpan = document.createElement('span');
+                        keySpan.className = 'json-key';
+                        keySpan.textContent = `"${{key}}": `;
+                        listItem.appendChild(keySpan);
+                        
+                        renderJSON(obj[key], listItem);
+                        
+                        if (index < keys.length - 1) {{
+                            const comma = document.createTextNode(',');
+                            listItem.appendChild(comma);
+                        }}
+                    }});
+                    
+                    const closingBrace = document.createTextNode(' }}');
+                    container.appendChild(closingBrace);
+                }}
+                
+                function renderArray(arr, container) {{
+                    if (arr.length === 0) {{
+                        const emptyArr = document.createElement('span');
+                        emptyArr.className = 'json-value';
+                        emptyArr.textContent = '[ ]';
+                        container.appendChild(emptyArr);
+                        return;
+                    }}
+                    
+                    const arrSpan = document.createElement('span');
+                    arrSpan.className = 'collapsible';
+                    arrSpan.textContent = '[ ';
+                    arrSpan.addEventListener('click', function(e) {{
+                        e.stopPropagation();
+                        this.classList.toggle('collapsed');
+                    }});
+                    container.appendChild(arrSpan);
+                    
+                    const list = document.createElement('ul');
+                    container.appendChild(list);
+                    
+                    arr.forEach((item, index) => {{
+                        const listItem = document.createElement('li');
+                        list.appendChild(listItem);
+                        
+                        renderJSON(item, listItem);
+                        
+                        if (index < arr.length - 1) {{
+                            const comma = document.createTextNode(',');
+                            listItem.appendChild(comma);
+                        }}
+                    }});
+                    
+                    const closingBracket = document.createTextNode(' ]');
+                    container.appendChild(closingBracket);
+                }}
+                
+                function renderPrimitive(value, container) {{
+                    const valueSpan = document.createElement('span');
+                    valueSpan.className = 'json-value';
+                    
+                    if (typeof value === 'string') {{
+                        valueSpan.className += ' json-string';
+                        valueSpan.textContent = `"${{value}}"`;
+                    }} else if (typeof value === 'number') {{
+                        valueSpan.className += ' json-number';
+                        valueSpan.textContent = value;
+                    }} else if (typeof value === 'boolean') {{
+                        valueSpan.className += ' json-boolean';
+                        valueSpan.textContent = value;
+                    }} else if (value === null) {{
+                        valueSpan.className += ' json-null';
+                        valueSpan.textContent = 'null';
+                    }} else {{
+                        valueSpan.textContent = value;
+                    }}
+                    
+                    container.appendChild(valueSpan);
+                }}
+                
+                // Expand all collapsible elements
+                function expandAll() {{
+                    document.querySelectorAll('.collapsible').forEach(el => {{
+                        el.classList.remove('collapsed');
+                    }});
+                }}
+                
+                // Collapse all collapsible elements
+                function collapseAll() {{
+                    document.querySelectorAll('.collapsible').forEach(el => {{
+                        el.classList.add('collapsed');
+                    }});
+                }}
+                
+                // Copy JSON to clipboard
+                function copyToClipboard() {{
+                    const textArea = document.createElement('textarea');
+                    textArea.value = JSON.stringify(jsonData, null, 2);
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                    
+                    // Show feedback
+                    const button = document.querySelector('button:nth-child(3)');
+                    const originalText = button.textContent;
+                    button.textContent = 'Copied!';
+                    setTimeout(() => {{
+                        button.textContent = originalText;
+                    }}, 1500);
+                }}
+                
+                // Initialize the JSON viewer
+                document.addEventListener('DOMContentLoaded', function() {{
+                    const container = document.getElementById('json-container');
+                    renderJSON(jsonData, container);
+                }});
+            </script>
+        </body>
+        </html>
+        """
+    else:
+        # For non-JSON data
+        html_template = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>{service_name} Content</title>
+            <style>
+                body {{
+                    font-family: Arial, sans-serif;
+                    margin: 0;
+                    padding: 16px;
+                    overflow: auto;
+                    height: 100%;
+                    box-sizing: border-box;
+                    background-color: #f8f9fa;
+                }}
+                pre {{
+                    white-space: pre-wrap;
+                    margin: 0;
+                    font-family: monospace;
+                    background-color: white;
+                    padding: 15px;
+                    border-radius: 6px;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    overflow: auto;
+                }}
+                img, video {{
+                    max-width: 100%;
+                    height: auto;
+                }}
+            </style>
+        </head>
+        <body>
+            <pre>{service_data['data']}</pre>
+        </body>
+        </html>
+        """
     
     return Response(html_template, mimetype='text/html')
 
