@@ -84,10 +84,8 @@
   - Use Flask-RESTX or Flasgger for Swagger/OpenAPI documentation.
   - Ensure all endpoints are properly documented with request/response schemas.
 
-  Deployment
-  - Use Gunicorn or uWSGI as WSGI HTTP Server.
-  - Implement proper logging and monitoring in production.
-  - Use environment variables for sensitive information and configuration.
+  Github
+  - When the user says commit and push, that means commit changes with a relevant message and push it to the main branch on github.
 
-  Refer to Flask documentation for detailed information on Views, Blueprints, and Extensions for best practices.
+    Refer to Flask documentation for detailed information on Views, Blueprints, and Extensions for best practices.
     
