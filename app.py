@@ -24,11 +24,21 @@ def fetch_data_from_service(service):
     try:
         response = requests.get(service['url'], timeout=5)
         if response.status_code == 200:
+            content_type = response.headers.get('content-type', '').lower()
+            
+            # Determine the data format based on content type
+            if 'application/json' in content_type:
+                data = response.json()
+            elif 'text/html' in content_type:
+                data = response.text
+            else:
+                data = response.text
+                
             return {
                 'name': service['name'],
                 'url': service['url'],
                 'status': 'Connected',
-                'data': response.json() if response.headers.get('content-type') == 'application/json' else response.text
+                'data': data
             }
         else:
             return {

@@ -85,6 +85,20 @@
             overflow: auto;
             font-family: monospace;
         }
+        .card .data iframe, 
+        .card .data img,
+        .card .data object {
+            max-width: 100%;
+            border: none;
+        }
+        .card .data-html {
+            background-color: #fff;
+            padding: 0;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            max-height: 300px;
+            overflow: auto;
+        }
         .welcome-card {
             background: white;
             border-radius: 10px;
@@ -181,9 +195,15 @@
                         </div>
                         <div class="url">{{ service.url }}</div>
                         {% if service.data %}
-                            <div class="data">
-                                <pre>{{ service.data }}</pre>
-                            </div>
+                            {% if service.data is string and (service.data.startswith('<!DOCTYPE html>') or service.data.startswith('<html>') or '<' in service.data and '>' in service.data) %}
+                                <div class="data-html">
+                                    {{ service.data|safe }}
+                                </div>
+                            {% else %}
+                                <div class="data">
+                                    <pre>{{ service.data }}</pre>
+                                </div>
+                            {% endif %}
                         {% endif %}
                     </div>
                 {% endfor %}
