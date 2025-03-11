@@ -3,6 +3,7 @@ import os
 import requests
 import re
 from flask import Flask, render_template, request, jsonify, redirect, url_for, Response
+from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 
@@ -20,6 +21,32 @@ def save_config(config):
     with open(CONFIG_FILE, 'w') as f:
         json.dump(config, f, indent=2)
 
+def process_html_content(html_content):
+    """Process HTML content to ensure proper rendering in cards.
+    
+    This function handles parsing and preprocessing of HTML content
+    to ensure scripts and styles are properly isolated.
+    """
+    try:
+        # Try using BeautifulSoup to parse and clean the HTML
+        soup = BeautifulSoup(html_content, 'html.parser')
+        
+        # Process script tags to ensure they execute properly in iframe
+        for script in soup.find_all('script'):
+            # Add defer attribute to external scripts to ensure they load properly
+            if script.get('src'):
+                script['defer'] = 'defer'
+            
+            # Remove any document.write calls which can break iframe rendering
+            if script.string:
+                script.string = script.string.replace('document.write', '// document.write')
+        
+        return str(soup)
+    except Exception as e:
+        # If parsing fails, return original content
+        print(f"Error processing HTML content: {e}")
+        return html_content
+
 def fetch_data_from_service(service):
     """Fetch data from an external service."""
     try:
@@ -32,7 +59,9 @@ def fetch_data_from_service(service):
                 data = response.json()
             elif 'text/html' in content_type:
                 data = response.text
-                # Add our card container CSS to HTML content if needed
+                # Process HTML content
+                data = process_html_content(data)
+                # Add our card container CSS to HTML content
                 data = inject_card_container_css(data, service['name'])
             else:
                 data = response.text
@@ -62,73 +91,26 @@ def inject_card_container_css(html_content, service_name):
     """Inject CSS and JavaScript to ensure proper containment within card."""
     # Only inject if it's a complete HTML document
     if not html_content.strip().startswith('<!DOCTYPE') and not html_content.strip().startswith('<html'):
-        return html_content
+        # For partial HTML content, wrap it in a complete HTML document
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>{service_name} Content</title>
+        </head>
+        <body>
+            {html_content}
+        </body>
+        </html>
+        """
     
     # Sanitize service name for use as a message identifier
     service_id = service_name.lower().replace(' ', '_')
     
-    # Inject script for parent-container communication and resizing
-    script_tag = f"""
-    <script>
-    // Function to handle messages from inside the card
-    function handleCardAction(action, data) {{
-        // Create a message for the parent window
-        const message = {{
-            serviceId: '{service_id}',
-            action: action,
-            data: data
-        }};
-        
-        // Send message to parent window
-        window.parent.postMessage(message, '*');
-    }}
-    
-    // Listen for resize messages from parent
-    window.addEventListener('message', function(event) {{
-        if (event.data && event.data.type === 'card-resize') {{
-            // Adjust content based on new dimensions
-            applyResponsiveStyles(event.data.width, event.data.height);
-        }}
-    }});
-    
-    // Function to apply responsive styles based on container size
-    function applyResponsiveStyles(width, height) {{
-        // You can implement responsive behavior here
-        // For example, hide elements when width is small
-        if (width < 300) {{
-            document.querySelectorAll('.hide-on-small').forEach(el => {{
-                el.style.display = 'none';
-            }});
-        }} else {{
-            document.querySelectorAll('.hide-on-small').forEach(el => {{
-                el.style.display = '';
-            }});
-        }}
-    }}
-    
-    // Add resize observer to track content changes
-    document.addEventListener('DOMContentLoaded', function() {{
-        // Initialize any responsive behavior
-        setTimeout(function() {{
-            // Request optimal size from parent
-            handleCardAction('resize-request', {{
-                contentHeight: document.body.scrollHeight
-            }});
-            
-            // Apply initial responsive styles
-            const width = window.innerWidth;
-            const height = window.innerHeight;
-            applyResponsiveStyles(width, height);
-        }}, 100);
-    }});
-    
-    // Example: <button onclick="handleCardAction('customAction', {{key: 'value'}})">Do Something</button>
-    </script>
-    """
-    
-    # Style tag to ensure content fits within card
-    style_tag = """
-    <style>
+    # Define base style to ensure content fits in cards
+    base_style = """
     html, body {
         margin: 0;
         padding: 0;
@@ -161,20 +143,121 @@ def inject_card_container_css(html_content, service_name):
             font-size: 0.8em;
         }
     }
-    </style>
     """
     
-    # Try to inject before the closing head tag
+    # Inject script for parent-container communication and resizing
+    card_script = f"""
+    // Function to handle messages from inside the card
+    function handleCardAction(action, data) {{
+        // Create a message for the parent window
+        const message = {{
+            serviceId: '{service_id}',
+            action: action,
+            data: data
+        }};
+        
+        // Send message to parent window
+        window.parent.postMessage(message, '*');
+    }}
+    
+    // Listen for resize messages from parent
+    window.addEventListener('message', function(event) {{
+        if (event.data && event.data.type === 'card-resize') {{
+            // Adjust content based on new dimensions
+            applyResponsiveStyles(event.data.width, event.data.height);
+        }}
+        
+        // Handle callbacks from parent
+        if (event.data && event.data.type === 'callback') {{
+            const callbackEvent = new CustomEvent('card-callback', {{
+                detail: event.data
+            }});
+            document.dispatchEvent(callbackEvent);
+        }}
+    }});
+    
+    // Function to apply responsive styles based on container size
+    function applyResponsiveStyles(width, height) {{
+        // You can implement responsive behavior here
+        // For example, hide elements when width is small
+        if (width < 300) {{
+            document.querySelectorAll('.hide-on-small').forEach(el => {{
+                el.style.display = 'none';
+            }});
+        }} else {{
+            document.querySelectorAll('.hide-on-small').forEach(el => {{
+                el.style.display = '';
+            }});
+        }}
+        
+        // Trigger an event that content can listen for
+        document.dispatchEvent(new CustomEvent('card-resize', {{
+            detail: {{ width, height }}
+        }}));
+    }}
+    
+    // Add resize observer to track content changes
+    document.addEventListener('DOMContentLoaded', function() {{
+        // Initialize any responsive behavior
+        setTimeout(function() {{
+            // Request optimal size from parent
+            handleCardAction('resize-request', {{
+                contentHeight: document.body.scrollHeight
+            }});
+            
+            // Apply initial responsive styles
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            applyResponsiveStyles(width, height);
+            
+            // Signal to parent that content is ready
+            handleCardAction('content-ready', {{ 
+                contentHeight: document.body.scrollHeight,
+                hasScripts: document.querySelectorAll('script').length > 0
+            }});
+        }}, 100);
+    }});
+    """
+    
+    # Check if there's a head tag to inject into
     if '</head>' in html_content:
+        # Create style tag
+        style_tag = f"<style>{base_style}</style>"
+        script_tag = f"<script>{card_script}</script>"
+        
+        # Insert before closing head tag
         html_content = html_content.replace('</head>', f'{style_tag}{script_tag}</head>')
     else:
-        # If no head tag, add after the opening body tag
-        if '<body' in html_content:
-            body_pos = html_content.find('<body')
-            end_body_tag = html_content.find('>', body_pos)
-            if end_body_tag != -1:
-                injection_point = end_body_tag + 1
-                html_content = html_content[:injection_point] + f'{style_tag}{script_tag}' + html_content[injection_point:]
+        # If no head tag exists, create one
+        head_content = f"""
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>{service_name} Content</title>
+            <style>{base_style}</style>
+            <script>{card_script}</script>
+        </head>
+        """
+        
+        # Insert after html tag if it exists
+        if '<html' in html_content:
+            html_pos = html_content.find('<html')
+            end_html_tag = html_content.find('>', html_pos)
+            if end_html_tag != -1:
+                insertion_point = end_html_tag + 1
+                html_content = html_content[:insertion_point] + head_content + html_content[insertion_point:]
+        else:
+            # If no html tag, inject at the beginning
+            html_content = f"<!DOCTYPE html>\n<html>{head_content}<body>{html_content}</body></html>"
+    
+    # Ensure proper doctype if missing
+    if '<!DOCTYPE' not in html_content and '<!doctype' not in html_content:
+        html_content = '<!DOCTYPE html>\n' + html_content
+    
+    # Add content base target to prevent navigation breaking out of iframe
+    if '<base' not in html_content:
+        if '</head>' in html_content:
+            html_content = html_content.replace('</head>', '<base target="_self"></head>')
     
     return html_content
 

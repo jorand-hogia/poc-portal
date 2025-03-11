@@ -371,31 +371,72 @@
                     dataContainer.className = isHtml ? 'data-html' : 'data';
                     
                     if (isHtml) {
-                        // Create iframe for isolation
+                        // Create iframe for isolation with proper styling
                         const iframe = document.createElement('iframe');
-                        iframe.sandbox = 'allow-scripts allow-same-origin allow-forms';
+                        
+                        // Set sandbox attributes to allow necessary functionality but maintain security
+                        iframe.sandbox = 'allow-scripts allow-same-origin allow-forms allow-popups';
                         iframe.title = `${this.serviceName} content`;
                         
                         // Add reference to parent card
                         iframe.dataset.cardId = this.serviceId;
                         
+                        // Properly size the iframe
+                        iframe.style.width = '100%';
+                        iframe.style.height = '100%';
+                        iframe.style.border = 'none';
+                        iframe.style.overflow = 'auto';
+                        
                         dataContainer.appendChild(iframe);
                         
-                        // Wait for iframe to load, then write content
+                        // Wait for iframe to load, then initialize content
                         iframe.onload = () => {
-                            const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-                            iframeDoc.open();
-                            iframeDoc.write(serviceData.data);
-                            iframeDoc.close();
-                            
-                            // Resize iframe content to fit card
-                            setTimeout(() => {
-                                this.resizeCardContent();
-                            }, 100);
+                            try {
+                                // Add stylesheet to iframe if not using srcdoc
+                                if (!iframe.srcdoc) {
+                                    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                                    
+                                    // Make sure the document is open for writing
+                                    iframeDoc.open();
+                                    iframeDoc.write(serviceData.data);
+                                    iframeDoc.close();
+                                    
+                                    // Execute any deferred scripts that might not have run
+                                    const scripts = iframeDoc.querySelectorAll('script');
+                                    scripts.forEach(oldScript => {
+                                        if (oldScript.src) {
+                                            // For external scripts
+                                            const newScript = iframeDoc.createElement('script');
+                                            Array.from(oldScript.attributes).forEach(attr => {
+                                                newScript.setAttribute(attr.name, attr.value);
+                                            });
+                                            newScript.async = false; // Ensure scripts run in order
+                                            oldScript.parentNode.replaceChild(newScript, oldScript);
+                                        }
+                                    });
+                                }
+                                
+                                // Resize iframe content to fit card
+                                setTimeout(() => {
+                                    this.resizeCardContent();
+                                }, 100);
+                            } catch (e) {
+                                console.error('Error initializing iframe content:', e);
+                                // Show error in iframe
+                                try {
+                                    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                                    iframeDoc.body.innerHTML += `<div style="color: red; padding: 10px; background: #ffeeee; margin-top: 10px; border: 1px solid #ffcccc;">
+                                        Error rendering content: ${e.message}
+                                    </div>`;
+                                } catch (innerError) {
+                                    // If we can't even show the error, log it
+                                    console.error('Failed to show error in iframe:', innerError);
+                                }
+                            }
                         };
                         
-                        // Set a blank initial src to trigger load event
-                        iframe.src = 'about:blank';
+                        // Use srcdoc for better HTML rendering
+                        iframe.srcdoc = serviceData.data;
                     } else {
                         const pre = document.createElement('pre');
                         pre.textContent = typeof serviceData.data === 'object' ? 
@@ -406,6 +447,9 @@
                     
                     // Insert before resize handle
                     this.cardElement.insertBefore(dataContainer, this.resizeHandle);
+                    
+                    // Ensure data container height is properly set
+                    this.resizeCardContent();
                 }
             }
             
@@ -481,29 +525,34 @@
             
             // Method to resize the card content based on card dimensions
             resizeCardContent() {
-                const iframe = this.cardElement.querySelector('iframe');
-                if (!iframe) return;
+                // Get the iframe or data container
+                const dataContainer = this.cardElement.querySelector('.data-html, .data');
+                if (!dataContainer) return;
                 
-                // Calculate available height for the iframe
+                // Calculate available height for the container
                 const cardHeight = this.cardElement.offsetHeight;
                 const cardHeaderHeight = 100; // Approximate height of header elements
                 const availableHeight = cardHeight - cardHeaderHeight;
                 
-                // Get the data-html container
-                const container = this.cardElement.querySelector('.data-html');
-                if (container) {
-                    container.style.height = `${Math.max(availableHeight, 50)}px`;
-                }
+                // Update container height
+                dataContainer.style.height = `${Math.max(availableHeight, 50)}px`;
                 
-                // Notify the iframe content about the resize
-                try {
-                    iframe.contentWindow.postMessage({
-                        type: 'card-resize',
-                        width: iframe.offsetWidth,
-                        height: iframe.offsetHeight
-                    }, '*');
-                } catch (e) {
-                    // Ignore errors with cross-origin frames
+                // If it's an HTML container with iframe, handle iframe sizing
+                if (dataContainer.className === 'data-html') {
+                    const iframe = dataContainer.querySelector('iframe');
+                    if (!iframe) return;
+                    
+                    // Notify the iframe content about the resize
+                    try {
+                        iframe.contentWindow.postMessage({
+                            type: 'card-resize',
+                            width: iframe.offsetWidth,
+                            height: iframe.offsetHeight
+                        }, '*');
+                    } catch (e) {
+                        // Ignore errors with cross-origin frames
+                        console.debug('Could not notify iframe of resize:', e);
+                    }
                 }
             }
         }
@@ -621,9 +670,10 @@
                         {% if service.data %}
                             {% if service.data is string and (service.data.startswith('<!DOCTYPE html>') or service.data.startswith('<html>') or '<' in service.data and '>' in service.data) %}
                                 <div class="data-html">
-                                    <iframe sandbox="allow-scripts allow-same-origin allow-forms" 
+                                    <iframe sandbox="allow-scripts allow-same-origin allow-forms allow-popups" 
                                             title="{{ service.name }} content"
                                             data-card-id="{{ service.name|replace(' ', '_')|lower }}"
+                                            style="width:100%; height:100%; border:none; overflow:auto;"
                                             srcdoc="{{ service.data|e }}"></iframe>
                                 </div>
                             {% else %}
