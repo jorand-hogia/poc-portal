@@ -97,17 +97,38 @@ def fetch_data_from_service(service):
             'data': None
         }
 
-@app.route('/')
-def home():
-    """Render the home page with all configured services."""
-    config = load_config()
-    service_data = []
+def fetch_service_data(services):
+    """Fetch data from multiple services in parallel.
     
+    Args:
+        services (list): List of service configurations
+        
+    Returns:
+        list: List of service data with connection status
+    """
+    if not services:
+        return []
+        
     # Fetch data from each service
-    for service in config.get('services', []):
+    service_data = []
+    for service in services:
         service_data.append(fetch_data_from_service(service))
     
-    return render_template('index.html', services=service_data)
+    return service_data
+
+@app.route('/')
+def index():
+    """Render the main dashboard."""
+    config = load_config()
+    services = fetch_service_data(config.get('services', []))
+    return render_template('index.html', services=services)
+
+@app.route('/draggable')
+def index_draggable():
+    """Render the draggable version of the dashboard."""
+    config = load_config()
+    services = fetch_service_data(config.get('services', []))
+    return render_template('index_draggable.html', services=services)
 
 @app.route('/refresh-service-data')
 def refresh_service_data():

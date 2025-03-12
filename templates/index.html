@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Barda</title>
+    <!-- Add GridStack.js library -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@7.2.3/dist/gridstack.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/gridstack@7.2.3/dist/gridstack-all.js"></script>
     <style>
         body {
             font-family: 'Arial', sans-serif;
@@ -41,22 +44,55 @@
             text-decoration: underline;
         }
         .service-cards {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 1.5rem;
-            align-items: start;
+            position: relative;
+            min-height: 500px;
         }
         .card {
             background: white;
             border-radius: 10px;
             padding: 1.5rem;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            position: relative;
-            transition: width 0.2s, height 0.2s;
+            position: absolute; /* Position absolute for free movement */
+            min-width: 250px;
+            width: 300px;
+            cursor: move; /* Show move cursor */
+            z-index: 1;
+            transition: box-shadow 0.2s;
+        }
+        .card.dragging {
+            opacity: 0.8;
+            z-index: 100;
+            box-shadow: 0 8px 15px rgba(0, 0, 0, 0.2);
         }
         .card.resizing {
             box-shadow: 0 0 0 2px #6e8efb, 0 4px 10px rgba(0, 0, 0, 0.2);
             transition: none;
+        }
+        .card.focused {
+            z-index: 10;
+            box-shadow: 0 0 0 2px #6e8efb, 0 8px 15px rgba(0, 0, 0, 0.15);
+        }
+        .card.minimized .iframe-container,
+        .card.minimized .url,
+        .card.minimized .resize-handle {
+            display: none;
+        }
+        .card.minimized {
+            height: auto !important;
+            width: 250px !important;
+        }
+        /* Dragable card handle for better UX */
+        .card-drag-handle {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 30px;
+            border-top-left-radius: 10px;
+            border-top-right-radius: 10px;
+            cursor: move;
+            background: transparent;
+            z-index: 2;
         }
         .resize-handle {
             position: absolute;
@@ -71,6 +107,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            z-index: 3;
         }
         .resize-handle::before {
             content: "";
@@ -85,8 +122,9 @@
             right: 10px;
             display: flex;
             gap: 5px;
+            z-index: 3;
         }
-        .size-reset, .refresh-card {
+        .size-reset, .refresh-card, .toggle-minimize, .toggle-snap {
             cursor: pointer;
             background: #f0f0f0;
             border: none;
@@ -99,8 +137,29 @@
             font-size: 12px;
             color: #666;
         }
-        .size-reset:hover, .refresh-card:hover {
+        .size-reset:hover, .refresh-card:hover, .toggle-minimize:hover, .toggle-snap:hover {
             background: #e0e0e0;
+        }
+        .toggle-snap.active {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .snap-grid {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image: linear-gradient(rgba(200, 200, 200, 0.1) 1px, transparent 1px),
+                              linear-gradient(90deg, rgba(200, 200, 200, 0.1) 1px, transparent 1px);
+            background-size: 20px 20px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 0;
+        }
+        .snap-grid.visible {
+            opacity: 1;
         }
         .refresh-card.loading {
             pointer-events: none;
@@ -124,6 +183,7 @@
             color: #333;
             border-bottom: 2px solid #f0f0f0;
             padding-bottom: 0.5rem;
+            padding-right: 50px; /* Make room for controls */
         }
         .card .status {
             display: inline-block;
@@ -173,6 +233,83 @@
         .welcome-card p {
             color: #666;
         }
+        .layout-controls {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 1rem;
+        }
+        .layout-button {
+            background: rgba(255, 255, 255, 0.8);
+            border: none;
+            border-radius: 5px;
+            padding: 0.5rem 1rem;
+            font-size: 0.9rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            color: #333;
+        }
+        .layout-button:hover {
+            background: white;
+        }
+        .keyboard-help {
+            margin-right: 10px;
+            position: relative;
+        }
+        .help-button {
+            background: rgba(255, 255, 255, 0.8);
+            border: none;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            color: #333;
+        }
+        .help-button:hover {
+            background: white;
+        }
+        .help-tooltip {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            width: 280px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            padding: 1rem;
+            z-index: 1000;
+            display: none;
+        }
+        .help-tooltip.visible {
+            display: block;
+        }
+        .help-tooltip h4 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        .shortcut-list {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+        .shortcut-list li {
+            margin-bottom: 6px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .key {
+            background: #f5f5f5;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            padding: 2px 5px;
+            font-family: monospace;
+            font-size: 12px;
+        }
         .clock-container {
             text-align: right;
             margin-bottom: 1rem;
@@ -213,6 +350,7 @@
         <header class="header">
             <h1>Barda</h1>
             <nav>
+                <a href="/draggable">Draggable View</a>
                 <a href="/settings">Settings</a>
             </nav>
         </header>
@@ -221,15 +359,40 @@
             <div id="clock">Loading time...</div>
         </div>
 
+        <div class="layout-controls">
+            <div class="keyboard-help">
+                <button class="help-button" title="Keyboard Shortcuts">?</button>
+                <div class="help-tooltip" id="help-tooltip">
+                    <h4>Keyboard Shortcuts</h4>
+                    <ul class="shortcut-list">
+                        <li><span>Move card</span> <span><span class="key">←</span> <span class="key">↑</span> <span class="key">→</span> <span class="key">↓</span></span></li>
+                        <li><span>Move faster</span> <span><span class="key">Shift</span> + Arrows</span></li>
+                        <li><span>Minimize/Maximize</span> <span><span class="key">M</span></span></li>
+                        <li><span>Refresh</span> <span><span class="key">R</span></span></li>
+                        <li><span>Toggle Snap</span> <span><span class="key">S</span></span></li>
+                        <li><span>Reset Size</span> <span><span class="key">Z</span></span></li>
+                    </ul>
+                </div>
+            </div>
+            <button id="clear-layout" class="layout-button">
+                <span>⟲</span> Reset Layout
+            </button>
+        </div>
+
         <div class="welcome-card">
             <h2>Welcome to Barda</h2>
             <p>This is your central dashboard for monitoring services and external resources. Add services in the settings page to get started.</p>
         </div>
 
+        <div class="snap-grid" id="snap-grid"></div>
+
         {% if services %}
-            <div class="service-cards">
+            <div class="service-cards" id="card-container">
                 {% for service in services %}
-                    <div class="card" data-service-id="{{ service.name|lower|replace(' ', '_') }}">
+                    <div class="card" 
+                         draggable="true"
+                         data-service-id="{{ service.name|lower|replace(' ', '_') }}">
+                        <div class="card-drag-handle"></div>
                         <h2>{{ service.name }}</h2>
                         <div class="status {% if service.status == 'Connected' %}connected{% else %}error{% endif %}">
                             {{ service.status }}
@@ -252,8 +415,10 @@
                         </div>
                         
                         <div class="card-controls">
+                            <button class="toggle-minimize" title="Minimize/Maximize">□</button>
                             <button class="size-reset" title="Reset size">⟲</button>
                             <button class="refresh-card" title="Refresh data">↻</button>
+                            <button class="toggle-snap" title="Toggle snap to grid">⊞</button>
                         </div>
                         <div class="resize-handle"></div>
                     </div>
@@ -261,44 +426,65 @@
             </div>
         {% else %}
             <div class="no-services">
-                <p>No services have been configured yet. Add your first service in the settings page.</p>
-                <a href="/settings" class="button">Go to Settings</a>
+                <p>No services configured yet. Add your first service to get started.</p>
+                <a href="/settings" class="button">Add Service</a>
             </div>
         {% endif %}
     </div>
 
     <script>
-        // Update the clock every second
+        // Update the clock display
         function updateClock() {
             const now = new Date();
-            const utcOffset = now.getTimezoneOffset();
-            const cetOffset = 60; // CET is UTC+1
-            const cetTime = new Date(now.getTime() + (cetOffset + utcOffset) * 60000);
-            const hours = String(cetTime.getHours()).padStart(2, '0');
-            const minutes = String(cetTime.getMinutes()).padStart(2, '0');
-            const seconds = String(cetTime.getSeconds()).padStart(2, '0');
-            document.getElementById('clock').textContent = `${hours}:${minutes}:${seconds} CET`;
+            const timeString = now.toLocaleTimeString();
+            const dateString = now.toLocaleDateString();
+            document.getElementById('clock').textContent = `${dateString} ${timeString}`;
         }
         
-        // Card class to encapsulate card functionality
         class ServiceCard {
             constructor(cardElement) {
                 this.cardElement = cardElement;
                 this.serviceId = cardElement.getAttribute('data-service-id');
                 this.serviceName = cardElement.querySelector('h2').textContent.trim();
+                this.isMinimized = localStorage.getItem(`card_minimized_${this.serviceId}`) === 'true';
+                this.useSnap = localStorage.getItem(`card_snap_${this.serviceId}`) === 'true';
+                this.zIndex = parseInt(localStorage.getItem(`card_zindex_${this.serviceId}`)) || 1;
                 
                 this.init();
             }
             
             init() {
+                // Set initial z-index
+                this.cardElement.style.zIndex = this.zIndex;
+                
+                // Apply minimized state if needed
+                if (this.isMinimized) {
+                    this.cardElement.classList.add('minimized');
+                }
+                
                 // Apply saved dimensions
                 this.applySavedDimensions();
+                
+                // Apply saved position
+                this.applySavedPosition();
                 
                 // Setup resize functionality
                 this.setupResizing();
                 
+                // Setup dragging functionality
+                this.setupDragging();
+                
                 // Setup refresh functionality
                 this.setupRefresh();
+                
+                // Setup focus/z-index management
+                this.setupFocus();
+                
+                // Setup minimize/maximize
+                this.setupMinimize();
+                
+                // Setup snap to grid
+                this.setupSnap();
             }
             
             applySavedDimensions() {
@@ -315,6 +501,17 @@
                 if (savedIframeHeight && iframeContainer) {
                     iframeContainer.style.height = savedIframeHeight;
                 }
+            }
+            
+            applySavedPosition() {
+                const left = localStorage.getItem(`card_left_${this.serviceId}`);
+                const top = localStorage.getItem(`card_top_${this.serviceId}`);
+                
+                if (left) this.cardElement.style.left = left;
+                else this.cardElement.style.left = (Math.random() * 100) + 'px'; // Random initial position
+                
+                if (top) this.cardElement.style.top = top;
+                else this.cardElement.style.top = (Math.random() * 100) + 'px'; // Random initial position
             }
             
             setupRefresh() {
@@ -335,7 +532,7 @@
                 e.stopPropagation();
                 
                 // Reset card dimensions
-                this.cardElement.style.width = '';
+                this.cardElement.style.width = '300px';
                 this.cardElement.style.height = '';
                 
                 // Reset iframe container height
@@ -416,6 +613,7 @@
                 // Resize handling
                 resizeHandle.addEventListener('mousedown', (e) => {
                     e.preventDefault();
+                    e.stopPropagation();
                     isResizing = true;
                     
                     // Store initial positions
@@ -477,6 +675,267 @@
                     document.addEventListener('mouseup', onMouseUp);
                 });
             }
+            
+            setupDragging() {
+                let dragStartX, dragStartY;
+                let cardStartLeft, cardStartTop;
+                let dragActive = false;
+                
+                // Function to save position
+                const savePosition = () => {
+                    localStorage.setItem(`card_left_${this.serviceId}`, this.cardElement.style.left);
+                    localStorage.setItem(`card_top_${this.serviceId}`, this.cardElement.style.top);
+                };
+                
+                // Function to constrain position within viewport
+                const constrainPosition = (left, top) => {
+                    const container = document.getElementById('card-container');
+                    const containerRect = container.getBoundingClientRect();
+                    
+                    // Make sure the card stays at least 50px inside the container bounds
+                    // so it doesn't get lost off-screen
+                    const minLeft = 0;
+                    const maxLeft = Math.max(containerRect.width - 100, 100);
+                    const minTop = 0;
+                    const maxTop = Math.max(containerRect.height - 100, 100);
+                    
+                    return {
+                        left: Math.min(Math.max(left, minLeft), maxLeft),
+                        top: Math.min(Math.max(top, minTop), maxTop)
+                    };
+                };
+                
+                // Event handlers for dragging
+                this.cardElement.addEventListener('dragstart', (e) => {
+                    // Store the starting positions
+                    dragStartX = e.clientX;
+                    dragStartY = e.clientY;
+                    cardStartLeft = parseInt(this.cardElement.style.left) || 0;
+                    cardStartTop = parseInt(this.cardElement.style.top) || 0;
+                    
+                    // Set drag data for Firefox
+                    e.dataTransfer.setData('text/plain', this.serviceId);
+                    
+                    // Set the drag image to be transparent 1x1 pixel 
+                    // (we'll manually position the element)
+                    const img = new Image();
+                    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+                    e.dataTransfer.setDragImage(img, 0, 0);
+                    
+                    // Add dragging class
+                    this.cardElement.classList.add('dragging');
+                    dragActive = true;
+                    
+                    // Pause iframe content during drag for better performance
+                    const iframe = this.cardElement.querySelector('iframe');
+                    if (iframe) {
+                        iframe.style.pointerEvents = 'none';
+                    }
+                    
+                    // Show snap grid if snap is enabled
+                    if (this.useSnap) {
+                        document.getElementById('snap-grid').classList.add('visible');
+                    }
+                });
+                
+                this.cardElement.addEventListener('drag', (e) => {
+                    if (!dragActive || !e.clientX || !e.clientY) return; // Ignore invalid events
+                    
+                    // Calculate the distance moved
+                    const deltaX = e.clientX - dragStartX;
+                    const deltaY = e.clientY - dragStartY;
+                    
+                    // Calculate new position
+                    let newLeft = cardStartLeft + deltaX;
+                    let newTop = cardStartTop + deltaY;
+                    
+                    // Snap to grid if enabled
+                    if (this.useSnap) {
+                        const gridSize = 20;
+                        newLeft = Math.round(newLeft / gridSize) * gridSize;
+                        newTop = Math.round(newTop / gridSize) * gridSize;
+                    }
+                    
+                    // Constrain position to viewport boundaries
+                    const constrained = constrainPosition(newLeft, newTop);
+                    
+                    // Update the position
+                    this.cardElement.style.left = constrained.left + 'px';
+                    this.cardElement.style.top = constrained.top + 'px';
+                });
+                
+                this.cardElement.addEventListener('dragend', (e) => {
+                    // Calculate the distance moved
+                    const deltaX = e.clientX - dragStartX;
+                    const deltaY = e.clientY - dragStartY;
+                    
+                    // Calculate new position
+                    let newLeft = cardStartLeft + deltaX;
+                    let newTop = cardStartTop + deltaY;
+                    
+                    // Snap to grid if enabled
+                    if (this.useSnap) {
+                        const gridSize = 20;
+                        newLeft = Math.round(newLeft / gridSize) * gridSize;
+                        newTop = Math.round(newTop / gridSize) * gridSize;
+                    }
+                    
+                    // Constrain position to viewport boundaries
+                    const constrained = constrainPosition(newLeft, newTop);
+                    
+                    this.cardElement.style.left = constrained.left + 'px';
+                    this.cardElement.style.top = constrained.top + 'px';
+                    
+                    // Remove dragging class
+                    this.cardElement.classList.remove('dragging');
+                    dragActive = false;
+                    
+                    // Re-enable iframe interactions
+                    const iframe = this.cardElement.querySelector('iframe');
+                    if (iframe) {
+                        iframe.style.pointerEvents = '';
+                    }
+                    
+                    // Save the final position
+                    savePosition();
+                    
+                    // Hide snap grid
+                    document.getElementById('snap-grid').classList.remove('visible');
+                });
+                
+                // Ensure the drag handle can be clicked without affecting iframe
+                const dragHandle = this.cardElement.querySelector('.card-drag-handle');
+                if (dragHandle) {
+                    dragHandle.addEventListener('mousedown', (e) => {
+                        // Ensure drag handle events don't interfere with iframe
+                        e.stopPropagation();
+                    });
+                }
+                
+                // Prevent clicks on controls from starting drag
+                const controls = this.cardElement.querySelectorAll('.card-controls button, .resize-handle');
+                controls.forEach(control => {
+                    control.addEventListener('mousedown', (e) => {
+                        e.stopPropagation();
+                    });
+                });
+            }
+            
+            setupFocus() {
+                // Bring card to front when clicked
+                this.cardElement.addEventListener('mousedown', (e) => {
+                    // Remove focused class from all cards
+                    document.querySelectorAll('.card').forEach(card => {
+                        card.classList.remove('focused');
+                    });
+                    
+                    // Add focused class to this card
+                    this.cardElement.classList.add('focused');
+                    
+                    // Set highest z-index
+                    const highestZ = Math.max(
+                        ...Array.from(document.querySelectorAll('.card'))
+                            .map(card => parseInt(card.style.zIndex) || 1)
+                    );
+                    this.zIndex = highestZ + 1;
+                    this.cardElement.style.zIndex = this.zIndex;
+                    
+                    // Save z-index
+                    localStorage.setItem(`card_zindex_${this.serviceId}`, this.zIndex);
+                });
+            }
+            
+            setupMinimize() {
+                const minimizeButton = this.cardElement.querySelector('.toggle-minimize');
+                if (!minimizeButton) return;
+                
+                // Update button text based on current state
+                minimizeButton.textContent = this.isMinimized ? '□' : '_';
+                
+                minimizeButton.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    this.isMinimized = !this.isMinimized;
+                    
+                    if (this.isMinimized) {
+                        this.cardElement.classList.add('minimized');
+                        minimizeButton.textContent = '□'; // Maximize symbol
+                    } else {
+                        this.cardElement.classList.remove('minimized');
+                        minimizeButton.textContent = '_'; // Minimize symbol
+                    }
+                    
+                    // Save minimized state
+                    localStorage.setItem(`card_minimized_${this.serviceId}`, this.isMinimized);
+                });
+            }
+            
+            setupSnap() {
+                const snapButton = this.cardElement.querySelector('.toggle-snap');
+                if (!snapButton) return;
+                
+                // Set initial state
+                if (this.useSnap) {
+                    snapButton.classList.add('active');
+                }
+                
+                snapButton.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    this.useSnap = !this.useSnap;
+                    
+                    if (this.useSnap) {
+                        snapButton.classList.add('active');
+                        // Snap to nearest grid point
+                        this.snapToGrid();
+                    } else {
+                        snapButton.classList.remove('active');
+                    }
+                    
+                    // Toggle grid visibility
+                    this.toggleSnapGrid();
+                    
+                    // Save snap state
+                    localStorage.setItem(`card_snap_${this.serviceId}`, this.useSnap);
+                });
+            }
+            
+            snapToGrid() {
+                const gridSize = 20; // Grid size in pixels
+                
+                // Get current position
+                const left = parseInt(this.cardElement.style.left) || 0;
+                const top = parseInt(this.cardElement.style.top) || 0;
+                
+                // Calculate nearest grid points
+                const newLeft = Math.round(left / gridSize) * gridSize;
+                const newTop = Math.round(top / gridSize) * gridSize;
+                
+                // Apply snapped position
+                this.cardElement.style.left = `${newLeft}px`;
+                this.cardElement.style.top = `${newTop}px`;
+                
+                // Save position
+                localStorage.setItem(`card_left_${this.serviceId}`, this.cardElement.style.left);
+                localStorage.setItem(`card_top_${this.serviceId}`, this.cardElement.style.top);
+            }
+            
+            toggleSnapGrid() {
+                const snapGrid = document.getElementById('snap-grid');
+                if (!snapGrid) return;
+                
+                // Count cards with snap enabled
+                const cardsWithSnapEnabled = Array.from(document.querySelectorAll('.toggle-snap.active')).length;
+                
+                // Show grid if at least one card has snap enabled
+                if (cardsWithSnapEnabled > 0) {
+                    snapGrid.classList.add('visible');
+                } else {
+                    snapGrid.classList.remove('visible');
+                }
+            }
         }
         
         // Initialize the clock and start updates
@@ -489,6 +948,169 @@
             cards.forEach(card => {
                 new ServiceCard(card);
             });
+
+            // Setup help tooltip
+            const helpButton = document.querySelector('.help-button');
+            const helpTooltip = document.getElementById('help-tooltip');
+            
+            if (helpButton && helpTooltip) {
+                helpButton.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    helpTooltip.classList.toggle('visible');
+                });
+                
+                // Close tooltip when clicking outside
+                document.addEventListener('click', (e) => {
+                    if (helpTooltip.classList.contains('visible') && 
+                        !helpTooltip.contains(e.target) && 
+                        e.target !== helpButton) {
+                        helpTooltip.classList.remove('visible');
+                    }
+                });
+            }
+
+            // Prevent default dragover to allow dropping
+            const container = document.getElementById('card-container');
+            container.addEventListener('dragover', (e) => {
+                e.preventDefault();
+            });
+            
+            // Check if any cards have snap enabled and show grid accordingly
+            setTimeout(() => {
+                const cardsWithSnapEnabled = document.querySelectorAll('.toggle-snap.active').length;
+                if (cardsWithSnapEnabled > 0) {
+                    document.getElementById('snap-grid').classList.add('visible');
+                }
+            }, 100);
+            
+            // Keyboard shortcuts
+            document.addEventListener('keydown', (e) => {
+                // Only process if we have a focused card
+                const focusedCard = document.querySelector('.card.focused');
+                if (!focusedCard) return;
+                
+                const serviceId = focusedCard.getAttribute('data-service-id');
+                const arrowDistance = e.shiftKey ? 10 : 1; // Move faster with shift
+                let left = parseInt(focusedCard.style.left) || 0;
+                let top = parseInt(focusedCard.style.top) || 0;
+                
+                // Process various keyboard shortcuts
+                switch (e.key) {
+                    case 'ArrowLeft':
+                        // Move left
+                        e.preventDefault();
+                        focusedCard.style.left = (left - arrowDistance) + 'px';
+                        localStorage.setItem(`card_left_${serviceId}`, focusedCard.style.left);
+                        break;
+                        
+                    case 'ArrowRight':
+                        // Move right
+                        e.preventDefault();
+                        focusedCard.style.left = (left + arrowDistance) + 'px';
+                        localStorage.setItem(`card_left_${serviceId}`, focusedCard.style.left);
+                        break;
+                        
+                    case 'ArrowUp':
+                        // Move up
+                        e.preventDefault();
+                        focusedCard.style.top = (top - arrowDistance) + 'px';
+                        localStorage.setItem(`card_top_${serviceId}`, focusedCard.style.top);
+                        break;
+                        
+                    case 'ArrowDown':
+                        // Move down
+                        e.preventDefault();
+                        focusedCard.style.top = (top + arrowDistance) + 'px';
+                        localStorage.setItem(`card_top_${serviceId}`, focusedCard.style.top);
+                        break;
+                        
+                    case 'm':
+                        // Toggle minimize
+                        e.preventDefault();
+                        const minimizeButton = focusedCard.querySelector('.toggle-minimize');
+                        if (minimizeButton) minimizeButton.click();
+                        break;
+                        
+                    case 'r':
+                        // Refresh card
+                        e.preventDefault();
+                        const refreshButton = focusedCard.querySelector('.refresh-card');
+                        if (refreshButton) refreshButton.click();
+                        break;
+                        
+                    case 's':
+                        // Toggle snap
+                        e.preventDefault();
+                        const snapButton = focusedCard.querySelector('.toggle-snap');
+                        if (snapButton) snapButton.click();
+                        break;
+                        
+                    case 'z':
+                        // Reset card
+                        e.preventDefault();
+                        const resetButton = focusedCard.querySelector('.size-reset');
+                        if (resetButton) resetButton.click();
+                        break;
+                }
+            });
+            
+            // Clear layout functionality
+            const clearLayoutButton = document.getElementById('clear-layout');
+            if (clearLayoutButton) {
+                clearLayoutButton.addEventListener('click', () => {
+                    if (confirm('Are you sure you want to reset the layout of all cards?')) {
+                        // Get all cards
+                        const cards = document.querySelectorAll('.card');
+                        
+                        // Clear all position data and reset cards
+                        cards.forEach((card, index) => {
+                            const serviceId = card.getAttribute('data-service-id');
+                            
+                            // Remove localStorage entries
+                            localStorage.removeItem(`card_width_${serviceId}`);
+                            localStorage.removeItem(`card_height_${serviceId}`);
+                            localStorage.removeItem(`card_left_${serviceId}`);
+                            localStorage.removeItem(`card_top_${serviceId}`);
+                            localStorage.removeItem(`card_iframe_height_${serviceId}`);
+                            localStorage.removeItem(`card_minimized_${serviceId}`);
+                            localStorage.removeItem(`card_zindex_${serviceId}`);
+                            localStorage.removeItem(`card_snap_${serviceId}`);
+                            
+                            // Reset inline styles
+                            card.style.width = '300px';
+                            card.style.height = '';
+                            card.style.left = `${100 + (index * 50)}px`;
+                            card.style.top = `${100 + (index * 30)}px`;
+                            card.style.zIndex = index + 1;
+                            
+                            // Reset classes
+                            card.classList.remove('minimized', 'focused');
+                            
+                            // Reset iframe container height
+                            const iframeContainer = card.querySelector('.iframe-container');
+                            if (iframeContainer) {
+                                iframeContainer.style.height = '300px';
+                            }
+                            
+                            // Reset control buttons
+                            const minimizeButton = card.querySelector('.toggle-minimize');
+                            if (minimizeButton) {
+                                minimizeButton.textContent = '_';
+                            }
+                            
+                            const snapButton = card.querySelector('.toggle-snap');
+                            if (snapButton) {
+                                snapButton.classList.remove('active');
+                            }
+                        });
+                        
+                        // Hide snap grid
+                        document.getElementById('snap-grid').classList.remove('visible');
+                        
+                        alert('Layout has been reset');
+                    }
+                });
+            }
         });
     </script>
 </body>
